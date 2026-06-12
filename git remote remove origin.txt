@@ -1,0 +1,5 @@
+git remote remove origin
+git remote add origin https://github.com/RenanV/financas-pro.git
+git add .
+git commit -m "descrição da mudança"
+git push
