@@ -31,7 +31,7 @@ interface User {
   email: string;
   username: string;
   password: string;
-  photo?: string; // base64
+  photo?: string;
 }
 
 const STORAGE_USERS = "financas-users";
@@ -336,11 +336,11 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
         </Card>
 
         <p className="text-center text-[#666] text-xs mt-6">
-             🔒 Seus dados ficam salvos apenas neste dispositivo.{" "}
+          🔒 Seus dados ficam salvos apenas neste dispositivo.{" "}
           <span className="text-yellow-600">
-          Não use senhas importantes aqui.
+            Não use senhas importantes aqui.
           </span>
-          </p>
+        </p>
       </div>
     </div>
   );
@@ -348,8 +348,6 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
 
 
 // ===================== DASHBOARD =====================
-
-
 
 interface TooltipProps {
   active?: boolean;
@@ -415,7 +413,7 @@ const StatCard = ({ title, value, color, icon: Icon, editable, onEdit }: {
 // ===================== PERFIL PANEL =====================
 
 function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => void }) {
-  const [tab, setTab] = useState<"email" | "senha">("email");
+  const [tab, setTab] = useState<"foto" | "email" | "senha">("foto");
 
   // Email fields
   const [newEmail, setNewEmail] = useState("");
@@ -435,45 +433,42 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
 
   const clearMessages = () => { setError(""); setSuccess(""); };
 
-  // Photo upload for Perfil
   const [photoPreview, setPhotoPreview] = useState<string>(user.photo || "");
   useEffect(() => { setPhotoPreview(user.photo || ""); }, [user.photo]);
 
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Arquivo muito grande (máximo 5MB)");
+      return;
+    }
 
-  if (file.size > 5 * 1024 * 1024) {
-    setError("Arquivo muito grande (máximo 5MB)");
-    return;
-  }
+    try {
+      setSuccess("Comprimindo imagem...");
 
-  try {
-    setSuccess("Comprimindo imagem...");
+      const compressedBase64 = await compressImage(file, {
+        maxWidth: 512,
+        maxHeight: 512,
+        quality: 0.75,
+      });
 
-    const compressedBase64 = await compressImage(file, {
-      maxWidth: 512,
-      maxHeight: 512,
-      quality: 0.75,
-    });
+      setPhotoPreview(compressedBase64);
 
-    setPhotoPreview(compressedBase64);
+      const users = getUsers();
+      const updatedUser = { ...user, photo: compressedBase64 };
+      saveUsers(users.map(u => u.id === user.id ? updatedUser : u));
+      saveSession(updatedUser);
+      onUpdate(updatedUser);
 
-    const users = getUsers();
-    const updatedUser = { ...user, photo: compressedBase64 };
-    saveUsers(users.map(u => u.id === user.id ? updatedUser : u));
-    saveSession(updatedUser);
-    onUpdate(updatedUser);  // ✅ usa onUpdate, que é o prop correto
-
-    setSuccess("Foto atualizada com sucesso!");
-    setTimeout(() => setSuccess(""), 3000);
-  } catch (err) {
-    console.error(err);
-    setError("Erro ao processar imagem. Tente outra foto.");
-  }
-};
-
+      setSuccess("Foto atualizada com sucesso!");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error(err);
+      setError("Erro ao processar imagem. Tente outra foto.");
+    }
+  };
 
   const handleEmailChange = (e: React.FormEvent) => {
     e.preventDefault();
@@ -489,8 +484,7 @@ const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       return;
     }
     const updated = { ...user, email: newEmail.trim() };
-    const newUsers = users.map(u => u.id === user.id ? updated : u);
-    saveUsers(newUsers);
+    saveUsers(users.map(u => u.id === user.id ? updated : u));
     saveSession(updated);
     onUpdate(updated);
     setSuccess("Email atualizado com sucesso!");
@@ -509,8 +503,7 @@ const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
     const users = getUsers();
     const updated = { ...user, password: newPass.trim() };
-    const newUsers = users.map(u => u.id === user.id ? updated : u);
-    saveUsers(newUsers);
+    saveUsers(users.map(u => u.id === user.id ? updated : u));
     saveSession(updated);
     onUpdate(updated);
     setSuccess("Senha atualizada com sucesso!");
@@ -524,8 +517,13 @@ const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       {/* User info card */}
       <Card className="bg-white/[0.03] border-white/[0.07]">
         <CardContent className="p-5 flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-            <User className="w-7 h-7 text-white" />
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center flex-shrink-0 overflow-hidden">
+            {photoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photoPreview} alt="Perfil" className="w-full h-full object-cover" />
+            ) : (
+              <User className="w-7 h-7 text-white" />
+            )}
           </div>
           <div>
             <p className="font-bold text-white text-base">{user.name}</p>
@@ -535,8 +533,18 @@ const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         </CardContent>
       </Card>
 
-      {/* Tab toggle */}
-      <div className="flex gap-2">
+      {/* Tab toggle — agora com 3 abas */}
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={() => { setTab("foto"); clearMessages(); }}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer border ${
+            tab === "foto"
+              ? "bg-orange-500/20 border-orange-500/30 text-white"
+              : "bg-white/[0.03] border-white/[0.07] text-[#888] hover:text-white"
+          }`}
+        >
+          <User className="w-4 h-4" /> Foto
+        </button>
         <button
           onClick={() => { setTab("email"); clearMessages(); }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer border ${
@@ -573,7 +581,40 @@ const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         </div>
       )}
 
-      {/* Email form */}
+      {/* ── Foto tab ── */}
+      {tab === "foto" && (
+        <Card className="bg-white/[0.03] border-white/[0.07]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
+              <User className="w-4 h-4 text-orange-500" /> Foto de Perfil
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-4">
+            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center overflow-hidden">
+              {photoPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={photoPreview} alt="Perfil" className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-12 h-12 text-white" />
+              )}
+            </div>
+            <label className="cursor-pointer w-full">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
+              <span className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20">
+                <Paperclip className="w-4 h-4" /> Escolher Foto
+              </span>
+            </label>
+            <p className="text-[#666] text-xs text-center">Tamanho máximo: 5MB. A imagem será comprimida automaticamente.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Email form ── */}
       {tab === "email" && (
         <Card className="bg-white/[0.03] border-white/[0.07]">
           <CardHeader className="pb-2">
@@ -582,7 +623,7 @@ const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <form onSubmit={handleEmailChange} className="space-y-3">
               <div>
                 <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Email Atual</label>
                 <div className="bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-[#666]">
@@ -616,17 +657,17 @@ const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                 </div>
               </div>
               <button
-                onClick={handleEmailChange}
+                type="submit"
                 className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 mt-1"
               >
                 <Check className="w-4 h-4" /> Salvar Novo Email
               </button>
-            </div>
+            </form>
           </CardContent>
         </Card>
       )}
 
-      {/* Password form */}
+      {/* ── Password form ── */}
       {tab === "senha" && (
         <Card className="bg-white/[0.03] border-white/[0.07]">
           <CardHeader className="pb-2">
@@ -635,7 +676,7 @@ const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <form onSubmit={handlePasswordChange} className="space-y-3">
               <div>
                 <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Senha Atual</label>
                 <div className="relative">
@@ -685,12 +726,12 @@ const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                 </div>
               </div>
               <button
-                onClick={handlePasswordChange}
+                type="submit"
                 className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 mt-1"
               >
                 <Check className="w-4 h-4" /> Salvar Nova Senha
               </button>
-            </div>
+            </form>
           </CardContent>
         </Card>
       )}
@@ -710,10 +751,10 @@ interface DashboardScreenProps {
 
 function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProps) {
   const [selectedMonth, setSelectedMonth] = useState(4);
-  const [activeTab, setActiveTab] = useState("visão geral");
+  // FIX: "perfil" adicionado ao tipo do activeTab
+  const [activeTab, setActiveTab] = useState<string>("visão geral");
   const [showForm, setShowForm] = useState(false);
-  const [editIncome, setEditIncome] = useState(false);
-  const [tempIncome, setTempIncome] = useState(4500);
+  // FIX: editIncome removido — não era usado para nada útil
   const [editingBudget, setEditingBudget] = useState<string | null>(null);
   const [tempBudget, setTempBudget] = useState<number>(0);
   const [modalAberto, setModalAberto] = useState(false);
@@ -768,10 +809,12 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
 
       if (target.type === "expense") {
         const exp = finance.expenses.find(x => x.id === target.id);
+        // FIX: updateExpense sem segundo argumento — consistente com o hook
         if (exp) finance.updateExpense({ ...exp, attachment: dataUrl, attachmentName: file.name } as Expense);
       } else {
         const inc = finance.incomeEntries.find(x => x.id === target.id);
-        if (inc) finance.updateIncome({ ...inc, attachment: dataUrl, attachmentName: file.name }, inc.amount);
+        // FIX: updateIncome sem segundo argumento — consistente com o hook
+        if (inc) finance.updateIncome({ ...inc, attachment: dataUrl, attachmentName: file.name });
       }
     } catch {
       alert("Erro ao processar o arquivo.");
@@ -780,19 +823,11 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
       setAttachTarget(null);
     }
   };
-  
-  // Estados para investimentos
-  const [investmentValue, setInvestmentValue] = useState("");
-  const investments = useInvestments();
-  
-  // Configurações de usuário
-  const [newEmail, setNewEmail] = useState(user.email);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [messageConfig, setMessageConfig] = useState("");
-  const [userPhoto, setUserPhoto] = useState(user.photo || "");
 
+  const investments = useInvestments();
+  const [investmentValue, setInvestmentValue] = useState("");
+
+  const [userPhoto, setUserPhoto] = useState(user.photo || "");
   useEffect(() => { setUserPhoto(user.photo || ""); }, [user.photo]);
 
   // Profile menu
@@ -837,85 +872,6 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    if (file.size > 5 * 1024 * 1024) {
-      setMessageConfig("Arquivo muito grande (máximo 5MB)");
-      return;
-    }
-    
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      setUserPhoto(base64);
-      
-      // Atualiza usuário com foto
-      const users = getUsers();
-      const updatedUsers = users.map(u =>
-        u.id === user.id ? { ...u, photo: base64 } : u
-      );
-      saveUsers(updatedUsers);
-      saveSession({ ...user, photo: base64 });
-      setMessageConfig("Foto de perfil atualizada!");
-      setTimeout(() => setMessageConfig(""), 3000);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleUpdateEmail = () => {
-    if (!newEmail.trim()) {
-      setMessageConfig("Email não pode estar vazio");
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
-      setMessageConfig("Email inválido");
-      return;
-    }
-    
-    const users = getUsers();
-    if (users.some(u => u.email === newEmail.trim() && u.id !== user.id)) {
-      setMessageConfig("Este email já está cadastrado");
-      return;
-    }
-    
-    const updatedUsers = users.map(u =>
-      u.id === user.id ? { ...u, email: newEmail.trim() } : u
-    );
-    saveUsers(updatedUsers);
-    saveSession({ ...user, email: newEmail.trim() });
-    setMessageConfig("Email atualizado com sucesso!");
-    setTimeout(() => setMessageConfig(""), 3000);
-  };
-
-  const handleUpdatePassword = () => {
-    if (!newPassword.trim()) {
-      setMessageConfig("Senha não pode estar vazia");
-      return;
-    }
-    if (newPassword.length < 4) {
-      setMessageConfig("Senha deve ter pelo menos 4 caracteres");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setMessageConfig("Senhas não conferem");
-      return;
-    }
-    
-    const users = getUsers();
-    const updatedUsers = users.map(u =>
-      u.id === user.id ? { ...u, password: newPassword.trim() } : u
-    );
-    saveUsers(updatedUsers);
-    saveSession({ ...user, password: newPassword.trim() });
-    setNewPassword("");
-    setConfirmPassword("");
-    setShowPasswordForm(false);
-    setMessageConfig("Senha atualizada com sucesso!");
-    setTimeout(() => setMessageConfig(""), 3000);
-  };
-
   const handleMonthChange = (month: number) => {
     setSelectedMonth(month);
     setForm(prev => ({
@@ -950,13 +906,15 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
     return "#EF4444";
   };
 
+  // FIX: "perfil" adicionado aos tabs para ser acessível via barra de navegação
   const tabs = [
-    { id: "visão geral", label: "Visão Geral", icon: PieIcon },
-    { id: "gastos", label: "Gastos", icon: Receipt },
-    { id: "investimentos", label: "Investimentos", icon: TrendingUpIcon },
-    { id: "histórico", label: "Histórico", icon: BarChart3 },
-    { id: "metas", label: "Metas", icon: Target },
-    { id: "relatórios", label: "Relatórios", icon: TrendingUp },
+    { id: "visão geral",   label: "Visão Geral",   icon: PieIcon },
+    { id: "gastos",        label: "Gastos",         icon: Receipt },
+    { id: "investimentos", label: "Investimentos",  icon: TrendingUpIcon },
+    { id: "histórico",     label: "Histórico",      icon: BarChart3 },
+    { id: "metas",         label: "Metas",          icon: Target },
+    { id: "relatórios",    label: "Relatórios",     icon: TrendingUp },
+    { id: "perfil",        label: "Perfil",         icon: Settings },
   ];
 
   return (
@@ -968,6 +926,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center overflow-hidden flex-shrink-0">
               {userPhoto ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={userPhoto} alt="Perfil" className="w-full h-full object-cover" />
               ) : (
                 <User className="w-8 h-8 text-white" />
@@ -990,9 +949,9 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                 </button>
 
                 {showProfileMenu && (
-                  <div className="absolute right-0 top-full mt-2 w-44 bg-[#0b0b14] border border-white/[0.07] rounded-lg shadow-lg py-1 z-50">
+                  <div className="absolute left-0 top-full mt-2 w-44 bg-[#0b0b14] border border-white/[0.07] rounded-lg shadow-lg py-1 z-50">
                     <button
-                      onClick={() => { setActiveTab('perfil'); setShowProfileMenu(false); }}
+                      onClick={() => { setActiveTab("perfil"); setShowProfileMenu(false); }}
                       className="w-full text-left px-4 py-2 text-sm hover:bg-white/5 flex items-center gap-2"
                     >
                       <Pencil className="w-4 h-4 text-[#888]" />
@@ -1259,7 +1218,8 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                 color="#10B981"
                 icon={PiggyBank}
                 editable
-                onEdit={() => { setTempIncome(finance.income); setEditIncome(true); }}
+                // FIX: clique na renda abre diretamente o modal de receita
+                onEdit={() => setModalAberto(true)}
               />
               <StatCard
                 title="Gastos"
@@ -1280,37 +1240,6 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                 icon={Target}
               />
             </div>
-
-           {editIncome && (
-  <Card className="bg-white/[0.03] border-white/[0.07]">
-    <CardContent className="p-4 flex items-center gap-3">
-      <input
-        className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500 flex-1"
-        type="number"
-        value={tempIncome}
-        onChange={e => setTempIncome(parseFloat(e.target.value) || 0)}
-        placeholder="Valor da renda"
-      />
-      <button
-        className="bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-emerald-500/30 transition-all cursor-pointer"
-        onClick={() => {
-          // Abre modal de receita em vez de setar renda diretamente
-          setModalAberto(true);
-          setEditIncome(false);
-        }}
-      >
-        <Check className="w-4 h-4" />
-      </button>
-      <button
-        className="bg-white/5 text-[#888] border border-white/10 rounded-lg px-4 py-2 text-sm hover:bg-white/10 transition-all cursor-pointer"
-        onClick={() => setEditIncome(false)}
-      >
-        <X className="w-4 h-4" />
-      </button>
-    </CardContent>
-  </Card>
-)}
-
 
             <Card className="bg-white/[0.03] border-white/[0.07]">
               <CardContent className="p-4 sm:p-5">
@@ -1391,539 +1320,9 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   <ResponsiveContainer width="100%" height={240}>
                     <BarChart data={finance.incomeVsExpenses.slice(0, 6)} barCategoryGap="20%">
                       <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R$${v}`} />
-                      <Tooltip content={<CustomTooltip />} cursor={{ fill: "#ffffff08" }} />
-                      <Legend wrapperStyle={{ fontSize: 12 }} formatter={(v) => <span className="text-[#888] text-xs">{v}</span>} />
-                      <Bar dataKey="renda" name="Renda" fill="#10B981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="gastos" name="Gastos" fill="#F97316" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <Target className="w-4 h-4 text-orange-500" />
-                  Resumo das Metas
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {finance.budgetStatus.slice(0, 4).map(b => (
-                  <div key={b.name} className="flex items-center gap-3">
-                    <span className="text-lg">{b.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs text-[#ccc]">{b.name}</span>
-                        <span className={`text-xs font-bold ${getBudgetStatusColor(b.pct)}`}>
-                          {formatBRL(b.spent)} / {formatBRL(b.budget)}
-                        </span>
-                      </div>
-                      <div className="bg-white/[0.07] rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="h-1.5 rounded-full transition-all duration-500"
-                          style={{
-                            width: `${Math.min(100, b.pct)}%`,
-                            backgroundColor: getBudgetBarColor(b.pct),
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <button
-                  className="text-orange-500 text-xs font-semibold flex items-center gap-1 hover:underline cursor-pointer mt-2"
-                  onClick={() => setActiveTab("metas")}
-                >
-                  Ver todas as metas <ChevronRight className="w-3 h-3" />
-                </button>
-              </CardContent>
-            </Card>
-
-            {finance.tip && (
-              <Card className="bg-gradient-to-br from-orange-500/10 to-pink-500/10 border-orange-500/20">
-                <CardContent className="p-4 sm:p-5">
-                  <p className="text-[13px] leading-relaxed m-0 flex items-start gap-2">
-                    <Lightbulb className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                    <span>
-                      <strong className="text-orange-500">Dica Inteligente:</strong>{" "}
-                      {finance.tip.icon} Você gastou {finance.tip.pct}% do total em {finance.tip.categoryName}.
-                      Tente reduzir em 10% no próximo mês para economizar {formatBRL(finance.tip.savings)}.
-                    </span>
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
-
-        {/* ===== INVESTIMENTOS ===== */}
-        {activeTab === "investimentos" && (
-          <div className="space-y-4">
-            {/* Disclaimer */}
-            <Card className="bg-blue-500/10 border-blue-500/20">
-              <CardContent className="p-4">
-                <p className="text-xs text-blue-300 m-0 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <span><strong>⚠️ Aviso Legal:</strong> As análises fornecidas são educacionais e não constituem aconselhamento financeiro. Consulte um especialista antes de investir.</span>
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Forma de entrada */}
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-orange-500" />
-                  Analisar Investimento
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input
-                      type="number"
-                      placeholder="Valor a investir (R$)"
-                      value={investmentValue}
-                      onChange={(e) => setInvestmentValue(e.target.value)}
-                      className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                      disabled={investments.analyzing}
-                    />
-                  </div>
-                  <button
-                    onClick={() => {
-                      const val = parseFloat(investmentValue);
-                      if (val > 0) {
-                        investments.analyze(val);
-                      }
-                    }}
-                    disabled={investments.analyzing || !investmentValue}
-                    className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-6 py-3 text-sm hover:opacity-85 transition-opacity cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {investments.analyzing ? (
-                      <>
-                        <Loader className="w-4 h-4 animate-spin" /> Analisando...
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-4 h-4" /> Analisar
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {investments.error && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                    <p className="text-red-400 text-sm m-0">{investments.error}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Resultados das análises */}
-            {investments.analyses.length > 0 && (
-              <>
-                {investments.analyses.map((analysis) => (
-                  <div key={analysis.id} className="space-y-3">
-                    {/* Cabeçalho da análise */}
-                    <Card className="bg-white/[0.03] border-white/[0.07]">
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="text-[#888] text-xs uppercase tracking-wider m-0">Análise de</p>
-                            <p className="text-lg font-bold text-orange-500 m-0 mt-0.5">
-                              {formatBRL(analysis.value)}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[#888] text-xs m-0">
-                              {new Date(analysis.date).toLocaleDateString("pt-BR", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "2-digit",
-                              })}
-                            </p>
-                            <p className="text-[#888] text-xs m-0 mt-0.5">
-                              ₿ {analysis.marketContext.btcPrice.toLocaleString("pt-BR", {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 0,
-                              })}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="text-sm text-[#ccc] m-0 italic">{analysis.summary}</p>
-                      </CardContent>
-                    </Card>
-
-                    {/* Recomendações */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {analysis.options.map((option) => (
-                        <Card key={option.type} className="bg-white/[0.03] border-white/[0.07]">
-                          <CardContent className="p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-2xl">{option.icon}</span>
-                              <div className="text-right">
-                                <p className="text-xl font-bold" style={{ color: option.color }}>
-                                  {option.percentage}%
-                                </p>
-                                <p className="text-[10px] text-[#888] uppercase tracking-wider">
-                                  {formatBRL((analysis.value * option.percentage) / 100)}
-                                </p>
-                              </div>
-                            </div>
-                            <p className="text-sm font-semibold text-white m-0 mb-1.5">
-                              {option.label}
-                            </p>
-                            <p className="text-[12px] text-[#888] m-0 mb-2 leading-relaxed">
-                              {option.justification}
-                            </p>
-                            <div className="flex items-center gap-2 justify-between pt-2 border-t border-white/[0.07]">
-                              <span className="text-[11px] text-[#666] uppercase">
-                                Risco: <span style={{ color: 
-                                  option.risk === "baixo" ? "#10B981" : 
-                                  option.risk === "médio" ? "#EAB308" : 
-                                  "#EF4444" 
-                                }}>{option.risk}</span>
-                              </span>
-                              <span className="text-[11px] font-semibold text-emerald-400">
-                                {option.expectedReturn}
-                              </span>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-
-                    {/* Notícias do mercado */}
-                    {analysis.marketContext.headlines.length > 0 && (
-                      <Card className="bg-white/[0.03] border-white/[0.07]">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-sm font-bold text-[#ccc]">
-                            📰 Notícias do Mercado
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <ul className="space-y-1.5">
-                            {analysis.marketContext.headlines.map((headline, i) => (
-                              <li key={i} className="text-xs text-[#888] flex gap-2">
-                                <span className="text-orange-500 flex-shrink-0">•</span>
-                                <span>{headline}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    <button
-                      onClick={() => investments.deleteAnalysis(analysis.id)}
-                      className="w-full bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl py-2 text-xs font-semibold hover:bg-red-500/20 transition-all cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3 inline mr-1" /> Remover Análise
-                    </button>
-                  </div>
-                ))}
-
-                {/* Botão limpar histórico */}
-                {investments.analyses.length > 0 && (
-                  <button
-                    onClick={() => {
-                      if (window.confirm("Tem certeza? Isso removerá todo o histórico.")) {
-                        investments.clearHistory();
-                      }
-                    }}
-                    className="w-full bg-white/[0.03] border border-white/[0.07] text-[#888] rounded-xl py-2 text-xs font-semibold hover:bg-white/[0.05] transition-all cursor-pointer"
-                  >
-                    Limpar Histórico
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* Estado vazio */}
-            {investments.analyses.length === 0 && !investments.analyzing && (
-              <Card className="bg-white/[0.03] border-white/[0.07] text-center py-8">
-                <CardContent className="p-4">
-                  <TrendingUpIcon className="w-12 h-12 text-[#666] mx-auto mb-3" />
-                  <p className="text-[#888] text-sm m-0">
-                    Insira um valor de investimento para receber análises personalizadas baseadas em dados de mercado e notícias globais.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
-
-        {/* ===== GASTOS ===== */}
-        {activeTab === "gastos" && (
-          <div className="space-y-4">
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc]">
-                  Por Categoria — {MONTHS[selectedMonth]}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {finance.sortedByCategory.length === 0 && (
-                  <p className="text-[#666] text-[13px]">Nenhum gasto neste mês.</p>
-                )}
-                <div className="space-y-4">
-                  {finance.sortedByCategory.map(c => {
-                    const budget = finance.budgets.find(b => b.category === c.name);
-                    const budgetLimit = budget?.limit || 0;
-                    const budgetPct = budgetLimit > 0 ? (c.value / budgetLimit) * 100 : 0;
-                    return (
-                      <div key={c.name}>
-                        <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-[13px] flex items-center gap-1.5">
-                            <span>{c.icon}</span> {c.name}
-                          </span>
-                          <div className="flex items-center gap-3">
-                            <span className="text-[11px] text-[#888]">
-                              meta: {formatBRL(budgetLimit)}
-                            </span>
-                            <span className="font-bold text-[13px]">{formatBRL(c.value)}</span>
-                          </div>
-                        </div>
-                        <div className="bg-white/[0.07] rounded-full h-2 overflow-hidden">
-                          <div
-                            className="h-2 rounded-full transition-all duration-500"
-                            style={{
-                              width: `${Math.min(100, budgetLimit > 0 ? (c.value / budgetLimit) * 100 : 0)}%`,
-                              backgroundColor: budgetPct > 100 ? "#EF4444" : c.color,
-                            }}
-                          />
-                        </div>
-                        <p className={`text-[11px] mt-1 ${getBudgetStatusColor(budgetPct)}`}>
-                          {(c.value / finance.totalExpenses * 100).toFixed(1)}% dos gastos
-                          {budgetPct > 100 && ` — Excedeu a meta em ${formatBRL(c.value - budgetLimit)}!`}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <Receipt className="w-4 h-4 text-orange-500" />
-                  Lançamentos ({finance.filtered.length + finance.filteredIncomes.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {finance.filtered.length === 0 && finance.filteredIncomes.length === 0 && (
-                  <p className="text-[#666] text-[13px]">Nenhum lançamento neste mês.</p>
-                )}
-                <div className="space-y-0">
-                  {[
-                    ...finance.filtered.map(e => ({ ...e, _type: "expense" as const })),
-                    ...finance.filteredIncomes.map(e => ({ ...e, _type: "income" as const })),
-                  ]
-                    .sort((a, b) => +new Date(b.date) - +new Date(a.date))
-                    .map(item => {
-                      if (item._type === "expense") {
-                        const e = item as import("@/app/types").Expense & { _type: "expense" };
-                        const cat = CATEGORIES.find(c => c.name === e.category);
-                        const isEditing = editingExpense?.id === e.id;
-                        return (
-                          <div key={`exp-${e.id}`} className="py-3.5 border-b border-white/[0.03] last:border-b-0">
-                            {isEditing ? (
-                              <div className="grid grid-cols-2 gap-2">
-                                <input
-                                  className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500 placeholder:text-[#666]"
-                                  value={editingExpense.description}
-                                  onChange={ev => setEditingExpense({ ...editingExpense, description: ev.target.value })}
-                                  placeholder="Descrição"
-                                />
-                                <input
-                                  type="number"
-                                  className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500"
-                                  value={editingExpense.amount}
-                                  onChange={ev => setEditingExpense({ ...editingExpense, amount: parseFloat(ev.target.value) || 0 })}
-                                />
-                                <input
-                                  type="date"
-                                  className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500"
-                                  value={editingExpense.date}
-                                  onChange={ev => setEditingExpense({ ...editingExpense, date: ev.target.value })}
-                                />
-                                <select
-                                  className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500"
-                                  value={editingExpense.category}
-                                  onChange={ev => setEditingExpense({ ...editingExpense, category: ev.target.value })}
-                                >
-                                  {CATEGORIES.map(c => (
-                                    <option key={c.name} value={c.name} className="bg-[#1a1a2e]">{c.icon} {c.name}</option>
-                                  ))}
-                                </select>
-                                <button
-                                  onClick={() => { finance.updateExpense(editingExpense); setEditingExpense(null); }}
-                                  className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all"
-                                >
-                                  <Check className="w-3 h-3" /> Salvar
-                                </button>
-                                <button
-                                  onClick={() => setEditingExpense(null)}
-                                  className="bg-white/5 text-[#888] border border-white/10 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-white/10 transition-all"
-                                >
-                                  <X className="w-3 h-3" /> Cancelar
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-3">
-                                <span className="text-xl">{cat?.icon}</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
-                                  <p className="text-[#888] text-[11px] mt-0.5">
-                                    {e.category} · {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
-                                  </p>
-                                </div>
-                                <span className="font-bold text-sm whitespace-nowrap" style={{ color: cat?.color || "#F97316" }}>
-                                  {formatBRL(e.amount)}
-                                </span>
-                                <button
-                                  onClick={() => handleAttachClick("expense", e.id, (e as Expense & { attachment?: string }).attachment)}
-                                  title={(e as Expense & { attachment?: string }).attachment ? "Ver comprovante" : "Anexar comprovante"}
-                                  className={`bg-transparent border-none cursor-pointer p-1.5 rounded-lg transition-all ${
-                                    (e as Expense & { attachment?: string }).attachment
-                                      ? "text-emerald-400 hover:bg-emerald-500/10"
-                                      : "text-white/20 hover:text-blue-400 hover:bg-blue-500/10"
-                                  }`}
-                                >
-                                  <Paperclip className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => setEditingExpense(e)}
-                                  className="bg-transparent border-none text-white/20 hover:text-orange-400 cursor-pointer p-1.5 rounded-lg hover:bg-orange-500/10 transition-all"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => finance.removeExpense(e.id)}
-                                  className="bg-transparent border-none text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      } else {
-                        const e = item as import("../hooks/useFinance").IncomeEntry & { _type: "income" };
-                        const isEditing = editingIncome?.id === e.id;
-                        return (
-                          <div key={`inc-${e.id}`} className="py-3.5 border-b border-white/[0.03] last:border-b-0">
-                            {isEditing ? (
-                              <div className="grid grid-cols-2 gap-2">
-                                <input
-                                  className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500 placeholder:text-[#666]"
-                                  value={editingIncome.description}
-                                  onChange={ev => setEditingIncome({ ...editingIncome, description: ev.target.value })}
-                                  placeholder="Descrição"
-                                />
-                                <input
-                                  type="number"
-                                  className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500"
-                                  value={editingIncome.amount}
-                                  onChange={ev => setEditingIncome({ ...editingIncome, amount: parseFloat(ev.target.value) || 0 })}
-                                />
-                                <input
-                                  type="date"
-                                  className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500"
-                                  value={editingIncome.date}
-                                  onChange={ev => setEditingIncome({ ...editingIncome, date: ev.target.value })}
-                                />
-                                <select
-                                  className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500"
-                                  value={editingIncome.type}
-                                  onChange={ev => setEditingIncome({ ...editingIncome, type: ev.target.value })}
-                                >
-                                  <option value="salario" className="bg-[#1a1a2e]">💰 Salário</option>
-                                  <option value="freelance" className="bg-[#1a1a2e]">💻 Freelance</option>
-                                  <option value="investimento" className="bg-[#1a1a2e]">📈 Investimento</option>
-                                  <option value="outro" className="bg-[#1a1a2e]">💡 Outro</option>
-                                </select>
-                                <button
-                                  onClick={() => { finance.updateIncome(editingIncome); setEditingIncome(null); }}
-                                  className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all"
-                                >
-                                  <Check className="w-3 h-3" /> Salvar
-                                </button>
-                                <button
-                                  onClick={() => setEditingIncome(null)}
-                                  className="bg-white/5 text-[#888] border border-white/10 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-white/10 transition-all"
-                                >
-                                  <X className="w-3 h-3" /> Cancelar
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-3">
-                                <span className="text-xl">💰</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
-                                  <p className="text-[#888] text-[11px] mt-0.5">
-                                    Receita · {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
-                                  </p>
-                                </div>
-                                <span className="font-bold text-sm whitespace-nowrap text-emerald-400">
-                                  +{formatBRL(e.amount)}
-                                </span>
-                                <button
-                                  onClick={() => handleAttachClick("income", e.id, e.attachment)}
-                                  title={e.attachment ? "Ver comprovante" : "Anexar comprovante"}
-                                  className={`bg-transparent border-none cursor-pointer p-1.5 rounded-lg transition-all ${
-                                    e.attachment
-                                      ? "text-emerald-400 hover:bg-emerald-500/10"
-                                      : "text-white/20 hover:text-blue-400 hover:bg-blue-500/10"
-                                  }`}
-                                >
-                                  <Paperclip className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => setEditingIncome(e)}
-                                  className="bg-transparent border-none text-white/20 hover:text-orange-400 cursor-pointer p-1.5 rounded-lg hover:bg-orange-500/10 transition-all"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => finance.removeIncome(e.id)}
-                                  className="bg-transparent border-none text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }
-                    })}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* ===== HISTÓRICO ===== */}
-        {activeTab === "histórico" && (
-          <div className="space-y-4">
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-orange-500" />
-                  Evolução Mensal de Gastos
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={finance.monthlyData} barCategoryGap="25%">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R$${v}`} />
+                      <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R$$
+{v}`} /> <Tooltip content={<CustomTooltip />} cursor={{ fill: "#ffffff08" }} /> <Legend wrapperStyle={{ fontSize: 12 }} formatter={(v) => <span className="text-[#888] text-xs">{v}</span>} /> <Bar dataKey="renda" name="Renda" fill="#10B981" radius={[4, 4, 0, 0]} /> <Bar dataKey="gastos" name="Gastos" fill="#F97316" radius={[4, 4, 0, 0]} /> </BarChart> </ResponsiveContainer> </CardContent> </Card> </div> <Card className="bg-white/[0.03] border-white/[0.07]"> <CardHeader className="pb-2"> <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2"> <Target className="w-4 h-4 text-orange-500" /> Resumo das Metas </CardTitle> </CardHeader> <CardContent className="space-y-3"> {finance.budgetStatus.slice(0, 4).map(b => ( <div key={b.name} className="flex items-center gap-3"> <span className="text-lg">{b.icon}</span> <div className="flex-1 min-w-0"> <div className="flex justify-between items-center mb-1"> <span className="text-xs text-[#ccc]">{b.name}</span> <span className={`text-xs font-bold ${getBudgetStatusColor(b.pct)}`}> {formatBRL(b.spent)} / {formatBRL(b.budget)} </span> </div> <div className="bg-white/[0.07] rounded-full h-1.5 overflow-hidden"> <div className="h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, b.pct)}%`, backgroundColor: getBudgetBarColor(b.pct), }} /> </div> </div> </div> ))} <button className="text-orange-500 text-xs font-semibold flex items-center gap-1 hover:underline cursor-pointer mt-2" onClick={() => setActiveTab("metas")} > Ver todas as metas <ChevronRight className="w-3 h-3" /> </button> </CardContent> </Card> {finance.tip && ( <Card className="bg-gradient-to-br from-orange-500/10 to-pink-500/10 border-orange-500/20"> <CardContent className="p-4 sm:p-5"> <p className="text-[13px] leading-relaxed m-0 flex items-start gap-2"> <Lightbulb className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" /> <span> <strong className="text-orange-500">Dica Inteligente:</strong>{" "} {finance.tip.icon} Você gastou {finance.tip.pct}% do total em {finance.tip.categoryName}. Tente reduzir em 10% no próximo mês para economizar {formatBRL(finance.tip.savings)}. </span> </p> </CardContent> </Card> )} </div> )} {/* ===== INVESTIMENTOS ===== */} {activeTab === "investimentos" && ( <div className="space-y-4"> <Card className="bg-blue-500/10 border-blue-500/20"> <CardContent className="p-4"> <p className="text-xs text-blue-300 m-0 flex items-start gap-2"> <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" /> <span><strong>⚠️ Aviso Legal:</strong> As análises fornecidas são educacionais e não constituem aconselhamento financeiro. Consulte um especialista antes de investir.</span> </p> </CardContent> </Card> <Card className="bg-white/[0.03] border-white/[0.07]"> <CardHeader className="pb-2"> <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2"> <Zap className="w-4 h-4 text-orange-500" /> Analisar Investimento </CardTitle> </CardHeader> <CardContent className="space-y-3"> <div className="flex gap-2"> <div className="relative flex-1"> <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" /> <input type="number" placeholder="Valor a investir (R$)" value={investmentValue} onChange={(e) => setInvestmentValue(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" disabled={investments.analyzing} /> </div> <button onClick={() => { const val = parseFloat(investmentValue); if (val > 0) investments.analyze(val); }} disabled={investments.analyzing || !investmentValue} className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-6 py-3 text-sm hover:opacity-85 transition-opacity cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed" > {investments.analyzing ? ( <><Loader className="w-4 h-4 animate-spin" /> Analisando...</> ) : ( <><Zap className="w-4 h-4" /> Analisar</> )} </button> </div> {investments.error && ( <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 flex items-center gap-2"> <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" /> <p className="text-red-400 text-sm m-0">{investments.error}</p> </div> )} </CardContent> </Card> {investments.analyses.length > 0 && ( <> {investments.analyses.map((analysis) => ( <div key={analysis.id} className="space-y-3"> <Card className="bg-white/[0.03] border-white/[0.07]"> <CardContent className="p-4"> <div className="flex justify-between items-start mb-2"> <div> <p className="text-[#888] text-xs uppercase tracking-wider m-0">Análise de</p> <p className="text-lg font-bold text-orange-500 m-0 mt-0.5">{formatBRL(analysis.value)}</p> </div> <div className="text-right"> <p className="text-[#888] text-xs m-0"> {new Date(analysis.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })} </p> <p className="text-[#888] text-xs m-0 mt-0.5"> ₿ {analysis.marketContext.btcPrice.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} </p> </div> </div> <p className="text-sm text-[#ccc] m-0 italic">{analysis.summary}</p> </CardContent> </Card> <div className="grid grid-cols-1 sm:grid-cols-2 gap-3"> {analysis.options.map((option) => ( <Card key={option.type} className="bg-white/[0.03] border-white/[0.07]"> <CardContent className="p-4"> <div className="flex items-center justify-between mb-2"> <span className="text-2xl">{option.icon}</span> <div className="text-right"> <p className="text-xl font-bold" style={{ color: option.color }}>{option.percentage}%</p> <p className="text-[10px] text-[#888] uppercase tracking-wider"> {formatBRL((analysis.value * option.percentage) / 100)} </p> </div> </div> <p className="text-sm font-semibold text-white m-0 mb-1.5">{option.label}</p> <p className="text-[12px] text-[#888] m-0 mb-2 leading-relaxed">{option.justification}</p> <div className="flex items-center gap-2 justify-between pt-2 border-t border-white/[0.07]"> <span className="text-[11px] text-[#666] uppercase"> Risco: <span style={{ color: option.risk === "baixo" ? "#10B981" : option.risk === "médio" ? "#EAB308" : "#EF4444" }}>{option.risk}</span> </span> <span className="text-[11px] font-semibold text-emerald-400">{option.expectedReturn}</span> </div> </CardContent> </Card> ))} </div> {analysis.marketContext.headlines.length > 0 && ( <Card className="bg-white/[0.03] border-white/[0.07]"> <CardHeader className="pb-2"> <CardTitle className="text-sm font-bold text-[#ccc]">📰 Notícias do Mercado</CardTitle> </CardHeader> <CardContent> <ul className="space-y-1.5"> {analysis.marketContext.headlines.map((headline, i) => ( <li key={i} className="text-xs text-[#888] flex gap-2"> <span className="text-orange-500 flex-shrink-0">•</span> <span>{headline}</span> </li> ))} </ul> </CardContent> </Card> )} <button onClick={() => investments.deleteAnalysis(analysis.id)} className="w-full bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl py-2 text-xs font-semibold hover:bg-red-500/20 transition-all cursor-pointer" > <Trash2 className="w-3 h-3 inline mr-1" /> Remover Análise </button> </div> ))} <button onClick={() => { if (window.confirm("Tem certeza? Isso removerá todo o histórico.")) investments.clearHistory(); }} className="w-full bg-white/[0.03] border border-white/[0.07] text-[#888] rounded-xl py-2 text-xs font-semibold hover:bg-white/[0.05] transition-all cursor-pointer" > Limpar Histórico </button> </> )} {investments.analyses.length === 0 && !investments.analyzing && ( <Card className="bg-white/[0.03] border-white/[0.07] text-center py-8"> <CardContent className="p-4"> <TrendingUpIcon className="w-12 h-12 text-[#666] mx-auto mb-3" /> <p className="text-[#888] text-sm m-0"> Insira um valor de investimento para receber análises personalizadas baseadas em dados de mercado e notícias globais. </p> </CardContent> </Card> )} </div> )} {/* ===== GASTOS ===== */} {activeTab === "gastos" && ( <div className="space-y-4"> <Card className="bg-white/[0.03] border-white/[0.07]"> <CardHeader className="pb-2"> <CardTitle className="text-sm font-bold text-[#ccc]"> Por Categoria — {MONTHS[selectedMonth]} </CardTitle> </CardHeader> <CardContent> {finance.sortedByCategory.length === 0 && ( <p className="text-[#666] text-[13px]">Nenhum gasto neste mês.</p> )} <div className="space-y-4"> {finance.sortedByCategory.map(c => { const budget = finance.budgets.find(b => b.category === c.name); const budgetLimit = budget?.limit || 0; const budgetPct = budgetLimit > 0 ? (c.value / budgetLimit) * 100 : 0; return ( <div key={c.name}> <div className="flex justify-between items-center mb-1.5"> <span className="text-[13px] flex items-center gap-1.5"> <span>{c.icon}</span> {c.name} </span> <div className="flex items-center gap-3"> <span className="text-[11px] text-[#888]">meta: {formatBRL(budgetLimit)}</span> <span className="font-bold text-[13px]">{formatBRL(c.value)}</span> </div> </div> <div className="bg-white/[0.07] rounded-full h-2 overflow-hidden"> <div className="h-2 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, budgetLimit > 0 ? (c.value / budgetLimit) * 100 : 0)}%`, backgroundColor: budgetPct > 100 ? "#EF4444" : c.color, }} /> </div> <p className={`text-[11px] mt-1 ${getBudgetStatusColor(budgetPct)}`}> {(c.value / finance.totalExpenses * 100).toFixed(1)}% dos gastos {budgetPct > 100 && ` — Excedeu a meta em ${formatBRL(c.value - budgetLimit)}!`} </p> </div> ); })} </div> </CardContent> </Card> <Card className="bg-white/[0.03] border-white/[0.07]"> <CardHeader className="pb-2"> <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2"> <Receipt className="w-4 h-4 text-orange-500" /> Lançamentos ({finance.filtered.length + finance.filteredIncomes.length}) </CardTitle> </CardHeader> <CardContent> {finance.filtered.length === 0 && finance.filteredIncomes.length === 0 && ( <p className="text-[#666] text-[13px]">Nenhum lançamento neste mês.</p> )} <div className="space-y-0"> {[ ...finance.filtered.map(e => ({ ...e, _type: "expense" as const })), ...finance.filteredIncomes.map(e => ({ ...e, _type: "income" as const })), ] .sort((a, b) => +new Date(b.date) - +new Date(a.date)) .map(item => { if (item._type === "expense") { const e = item as import("@/app/types").Expense & { _type: "expense" }; const cat = CATEGORIES.find(c => c.name === e.category); const isEditing = editingExpense?.id === e.id; return ( <div key={`exp-${e.id}`} className="py-3.5 border-b border-white/[0.03] last:border-b-0"> {isEditing ? ( <div className="grid grid-cols-2 gap-2"> <input className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500 placeholder:text-[#666]" value={editingExpense.description} onChange={ev => setEditingExpense({ ...editingExpense, description: ev.target.value })} placeholder="Descrição" /> <input type="number" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.amount} onChange={ev => setEditingExpense({ ...editingExpense, amount: parseFloat(ev.target.value) || 0 })} /> <input type="date" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.date} onChange={ev => setEditingExpense({ ...editingExpense, date: ev.target.value })} /> <select className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.category} onChange={ev => setEditingExpense({ ...editingExpense, category: ev.target.value })} > {CATEGORIES.map(c => ( <option key={c.name} value={c.name} className="bg-[#1a1a2e]">{c.icon} {c.name}</option> ))} </select> <button onClick={() => { finance.updateExpense(editingExpense); setEditingExpense(null); }} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all" > <Check className="w-3 h-3" /> Salvar </button> <button onClick={() => setEditingExpense(null)} className="bg-white/5 text-[#888] border border-white/10 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-white/10 transition-all" > <X className="w-3 h-3" /> Cancelar </button> </div> ) : ( <div className="flex items-center gap-3"> <span className="text-xl">{cat?.icon}</span> <div className="flex-1 min-w-0"> <p className="font-semibold text-sm m-0 truncate">{e.description}</p> <p className="text-[#888] text-[11px] mt-0.5"> {e.category} \cdot  {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")} </p> </div> <span className="font-bold text-sm whitespace-nowrap" style={{ color: cat?.color || "#F97316" }}> {formatBRL(e.amount)} </span> <button onClick={() => handleAttachClick("expense", e.id, (e as Expense & { attachment?: string }).attachment)} title={(e as Expense & { attachment?: string }).attachment ? "Ver comprovante" : "Anexar comprovante"} className={`bg-transparent border-none cursor-pointer p-1.5 rounded-lg transition-all ${ (e as Expense & { attachment?: string }).attachment ? "text-emerald-400 hover:bg-emerald-500/10" : "text-white/20 hover:text-blue-400 hover:bg-blue-500/10" }`} > <Paperclip className="w-4 h-4" /> </button> <button onClick={() => setEditingExpense(e)} className="bg-transparent border-none text-white/20 hover:text-orange-400 cursor-pointer p-1.5 rounded-lg hover:bg-orange-500/10 transition-all" > <Pencil className="w-4 h-4" /> </button> <button onClick={() => finance.removeExpense(e.id)} className="bg-transparent border-none text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all" > <Trash2 className="w-4 h-4" /> </button> </div> )} </div> ); } else { const e = item as import("../hooks/useFinance").IncomeEntry & { _type: "income" }; const isEditing = editingIncome?.id === e.id; return ( <div key={`inc-${e.id}`} className="py-3.5 border-b border-white/[0.03] last:border-b-0"> {isEditing ? ( <div className="grid grid-cols-2 gap-2"> <input className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500 placeholder:text-[#666]" value={editingIncome.description} onChange={ev => setEditingIncome({ ...editingIncome, description: ev.target.value })} placeholder="Descrição" /> <input type="number" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.amount} onChange={ev => setEditingIncome({ ...editingIncome, amount: parseFloat(ev.target.value) || 0 })} /> <input type="date" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.date} onChange={ev => setEditingIncome({ ...editingIncome, date: ev.target.value })} /> <select className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.type} onChange={ev => setEditingIncome({ ...editingIncome, type: ev.target.value })} > <option value="salario" className="bg-[#1a1a2e]">💰 Salário</option> <option value="freelance" className="bg-[#1a1a2e]">💻 Freelance</option> <option value="investimento" className="bg-[#1a1a2e]">📈 Investimento</option> <option value="outro" className="bg-[#1a1a2e]">💡 Outro</option> </select> <button // FIX: updateIncome consistente — sem segundo argumento onClick={() => { finance.updateIncome(editingIncome); setEditingIncome(null); }} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all" > <Check className="w-3 h-3" /> Salvar </button> <button onClick={() => setEditingIncome(null)} className="bg-white/5 text-[#888] border border-white/10 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-white/10 transition-all" > <X className="w-3 h-3" /> Cancelar </button> </div> ) : ( <div className="flex items-center gap-3"> <span className="text-xl">💰</span> <div className="flex-1 min-w-0"> <p className="font-semibold text-sm m-0 truncate">{e.description}</p> <p className="text-[#888] text-[11px] mt-0.5"> Receita \cdot  {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")} </p> </div> <span className="font-bold text-sm whitespace-nowrap text-emerald-400"> +{formatBRL(e.amount)} </span> <button onClick={() => handleAttachClick("income", e.id, e.attachment)} title={e.attachment ? "Ver comprovante" : "Anexar comprovante"} className={`bg-transparent border-none cursor-pointer p-1.5 rounded-lg transition-all ${ e.attachment ? "text-emerald-400 hover:bg-emerald-500/10" : "text-white/20 hover:text-blue-400 hover:bg-blue-500/10" }`} > <Paperclip className="w-4 h-4" /> </button> <button onClick={() => setEditingIncome(e)} className="bg-transparent border-none text-white/20 hover:text-orange-400 cursor-pointer p-1.5 rounded-lg hover:bg-orange-500/10 transition-all" > <Pencil className="w-4 h-4" /> </button> <button onClick={() => finance.removeIncome(e.id)} className="bg-transparent border-none text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all" > <Trash2 className="w-4 h-4" /> </button> </div> )} </div> ); } })} </div> </CardContent> </Card> </div> )} {/* ===== HISTÓRICO ===== */} {activeTab === "histórico" && ( <div className="space-y-4"> <Card className="bg-white/[0.03] border-white/[0.07]"> <CardHeader className="pb-2"> <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2"> <BarChart3 className="w-4 h-4 text-orange-500" /> Evolução Mensal de Gastos </CardTitle> </CardHeader> <CardContent> <ResponsiveContainer width="100%" height={280}> <BarChart data={finance.monthlyData} barCategoryGap="25%"> <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} /> <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} /> <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R
+$${v}`} />
                     <Tooltip content={<CustomTooltip />} cursor={{ fill: "#ffffff08" }} />
                     <Bar dataKey="total" name="Total" radius={[6, 6, 0, 0]}>
                       {finance.monthlyData.map((_, i) => (
@@ -1956,291 +1355,9 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
                     <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R$${v}`} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area
-                      type="monotone"
-                      dataKey="total"
-                      name="Gastos"
-                      stroke="#F97316"
-                      strokeWidth={2}
-                      fillOpacity={1}
-                      fill="url(#colorTotal)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* ===== METAS ===== */}
-        {activeTab === "metas" && (
-          <div className="space-y-4">
-            <Card className="bg-gradient-to-br from-orange-500/10 to-pink-500/10 border-orange-500/20">
-              <CardContent className="p-4 sm:p-5">
-                <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
-                  <Target className="w-4 h-4 text-orange-500" />
-                  Metas de Gasto por Categoria
-                </h3>
-                <p className="text-[#888] text-xs">
-                  Defina limites de gasto para cada categoria e acompanhe seu progresso.
-                </p>
-              </CardContent>
-            </Card>
-
-            <div className="grid gap-3">
-              {finance.budgetStatus.map(b => (
-                <Card key={b.name} className="bg-white/[0.03] border-white/[0.07]">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl">{b.icon}</span>
-                        <div>
-                          <p className="text-sm font-semibold text-white m-0">{b.name}</p>
-                          <p className={`text-xs m-0 ${getBudgetStatusColor(b.pct)}`}>
-                            {b.pct > 100
-                              ? `Excedeu em ${formatBRL(b.spent - b.budget)}`
-                              : `${b.pct.toFixed(0)}% utilizado`}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {editingBudget === b.name ? (
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-2 py-1 text-sm outline-none focus:border-orange-500 w-24 text-right"
-                              type="number"
-                              value={tempBudget}
-                              onChange={e => setTempBudget(parseFloat(e.target.value) || 0)}
-                              autoFocus
-                            />
-                            <button
-                              className="text-emerald-500 hover:bg-emerald-500/10 p-1 rounded cursor-pointer transition-colors"
-                              onClick={() => {
-                                finance.updateBudget(b.name, tempBudget);
-                                setEditingBudget(null);
-                              }}
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button
-                              className="text-[#888] hover:bg-white/5 p-1 rounded cursor-pointer transition-colors"
-                              onClick={() => setEditingBudget(null)}
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            className="flex items-center gap-1 text-[#888] hover:text-orange-500 text-xs font-medium transition-colors cursor-pointer"
-                            onClick={() => {
-                              setTempBudget(b.budget);
-                              setEditingBudget(b.name);
-                            }}
-                          >
-                            {formatBRL(b.budget)}
-                            <Pencil className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <Progress
-                      value={Math.min(100, b.pct)}
-                      className="h-2.5 bg-white/[0.07]"
-                    />
-
-                    <div className="flex justify-between mt-2">
-                      <span className="text-xs text-[#888]">
-                        Gasto: <span className="font-semibold text-white">{formatBRL(b.spent)}</span>
-                      </span>
-                      <span className="text-xs text-[#888]">
-                        Restante:{" "}
-                        <span className={`font-semibold ${b.spent > b.budget ? "text-red-500" : "text-emerald-500"}`}>
-                          {formatBRL(b.budget - b.spent)}
-                        </span>
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ===== CONFIGURAÇÕES ===== */}
-        {activeTab === "configurações" && (
-          <div className="space-y-4">
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <User className="w-4 h-4 text-orange-500" />
-                  Perfil do Usuário
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-col items-center">
-                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center mb-4 overflow-hidden">
-                    {userPhoto ? (
-                      <img src={userPhoto} alt="Perfil" className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="w-12 h-12 text-white" />
-                    )}
-                  </div>
-                  <label className="cursor-pointer">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handlePhotoUpload}
-                      className="hidden"
-                    />
-                    <span className="text-orange-500 text-xs font-semibold hover:underline">
-                      Alterar Foto
-                    </span>
-                  </label>
-                </div>
-                <div>
-                  <p className="text-xs text-[#888] uppercase tracking-wider font-medium mb-2">Nome</p>
-                  <p className="text-white font-semibold">{user.name}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-[#888] uppercase tracking-wider font-medium mb-2">Usuário</p>
-                  <p className="text-white font-semibold">{user.username}</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {messageConfig && (
-              <div className={`px-4 py-3 rounded-xl border flex items-center gap-2 ${
-                messageConfig.includes("sucesso")
-                  ? "bg-emerald-500/10 border-emerald-500/20"
-                  : "bg-red-500/10 border-red-500/20"
-              }`}>
-                {messageConfig.includes("sucesso") ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                )}
-                <p className={`text-sm m-0 ${
-                  messageConfig.includes("sucesso") ? "text-emerald-400" : "text-red-400"
-                }`}>
-                  {messageConfig}
-                </p>
-              </div>
-            )}
-
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-orange-500" />
-                  Alterar Email
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
-                    Novo Email
-                  </label>
-                  <input
-                    type="email"
-                    className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                    placeholder="novo@email.com"
-                    value={newEmail}
-                    onChange={e => setNewEmail(e.target.value)}
-                  />
-                </div>
-                <button
-                  onClick={handleUpdateEmail}
-                  className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
-                >
-                  <Check className="w-4 h-4" /> Atualizar Email
-                </button>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-orange-500" />
-                  Alterar Senha
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {!showPasswordForm ? (
-                  <button
-                    onClick={() => setShowPasswordForm(true)}
-                    className="bg-white/5 border border-white/10 hover:bg-white/10 text-[#ccc] font-semibold rounded-xl px-5 py-2.5 text-sm transition-colors w-full cursor-pointer"
-                  >
-                    Clique para alterar senha
-                  </button>
-                ) : (
-                  <>
-                    <div>
-                      <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
-                        Nova Senha
-                      </label>
-                      <input
-                        type="password"
-                        className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                        placeholder="Mínimo 4 caracteres"
-                        value={newPassword}
-                        onChange={e => setNewPassword(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
-                        Confirmar Senha
-                      </label>
-                      <input
-                        type="password"
-                        className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                        placeholder="Repita a senha"
-                        value={confirmPassword}
-                        onChange={e => setConfirmPassword(e.target.value)}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleUpdatePassword}
-                        className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity flex-1 cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
-                      >
-                        <Check className="w-4 h-4" /> Confirmar
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowPasswordForm(false);
-                          setNewPassword("");
-                          setConfirmPassword("");
-                        }}
-                        className="bg-white/5 border border-white/10 hover:bg-white/10 text-[#ccc] font-semibold rounded-xl px-5 py-2.5 text-sm transition-colors flex-1 cursor-pointer"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* ===== RELATÓRIOS ===== */}
-        {activeTab === "relatórios" && (
-          <div className="space-y-4">
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-orange-500" />
-                  Comparativo Renda vs Gastos (Últimos 6 meses)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={finance.incomeVsExpenses.slice(0, 6)} barCategoryGap="20%">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R$${v}`} />
+                    <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R$$
+{v}`} /> <Tooltip content={<CustomTooltip />} /> <Area type="monotone" dataKey="total" name="Gastos" stroke="#F97316" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" /> </AreaChart> </ResponsiveContainer> </CardContent> </Card> </div> )} {/* ===== METAS ===== */} {activeTab === "metas" && ( <div className="space-y-4"> <Card className="bg-gradient-to-br from-orange-500/10 to-pink-500/10 border-orange-500/20"> <CardContent className="p-4 sm:p-5"> <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2"> <Target className="w-4 h-4 text-orange-500" /> Metas de Gasto por Categoria </h3> <p className="text-[#888] text-xs"> Defina limites de gasto para cada categoria e acompanhe seu progresso. </p> </CardContent> </Card> <div className="grid gap-3"> {finance.budgetStatus.map(b => ( <Card key={b.name} className="bg-white/[0.03] border-white/[0.07]"> <CardContent className="p-4"> <div className="flex items-center justify-between mb-3"> <div className="flex items-center gap-2"> <span className="text-xl">{b.icon}</span> <div> <p className="text-sm font-semibold text-white m-0">{b.name}</p> <p className={`text-xs m-0 ${getBudgetStatusColor(b.pct)}`}> {b.pct > 100 ? `Excedeu em ${formatBRL(b.spent - b.budget)}` : `${b.pct.toFixed(0)}% utilizado`} </p> </div> </div> <div className="flex items-center gap-2"> {editingBudget === b.name ? ( <div className="flex items-center gap-1.5"> <input className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-2 py-1 text-sm outline-none focus:border-orange-500 w-24 text-right" type="number" value={tempBudget} onChange={e => setTempBudget(parseFloat(e.target.value) || 0)} autoFocus /> <button className="text-emerald-500 hover:bg-emerald-500/10 p-1 rounded cursor-pointer transition-colors" onClick={() => { finance.updateBudget(b.name, tempBudget); setEditingBudget(null); }} > <Check className="w-4 h-4" /> </button> <button className="text-[#888] hover:bg-white/5 p-1 rounded cursor-pointer transition-colors" onClick={() => setEditingBudget(null)} > <X className="w-4 h-4" /> </button> </div> ) : ( <button className="flex items-center gap-1 text-[#888] hover:text-orange-500 text-xs font-medium transition-colors cursor-pointer" onClick={() => { setTempBudget(b.budget); setEditingBudget(b.name); }} > {formatBRL(b.budget)} <Pencil className="w-3 h-3" /> </button> )} </div> </div> <Progress value={Math.min(100, b.pct)} className="h-2.5 bg-white/[0.07]" /> <div className="flex justify-between mt-2"> <span className="text-xs text-[#888]"> Gasto: <span className="font-semibold text-white">{formatBRL(b.spent)}</span> </span> <span className="text-xs text-[#888]"> Restante:{" "} <span className={`font-semibold ${b.spent > b.budget ? "text-red-500" : "text-emerald-500"}`}> {formatBRL(b.budget - b.spent)} </span> </span> </div> </CardContent> </Card> ))} </div> </div> )} {/* ===== RELATÓRIOS ===== */} {activeTab === "relatórios" && ( <div className="space-y-4"> <Card className="bg-white/[0.03] border-white/[0.07]"> <CardHeader className="pb-2"> <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2"> <BarChart3 className="w-4 h-4 text-orange-500" /> Comparativo Renda vs Gastos (Últimos 6 meses) </CardTitle> </CardHeader> <CardContent> <ResponsiveContainer width="100%" height={300}> <BarChart data={finance.incomeVsExpenses.slice(0, 6)} barCategoryGap="20%"> <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} /> <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} /> <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R
+$${v}`} />
                     <Tooltip content={<CustomTooltip />} cursor={{ fill: "#ffffff08" }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} formatter={(v) => <span className="text-[#888] text-xs">{v}</span>} />
                     <Bar dataKey="renda" name="Renda" fill="#10B981" radius={[4, 4, 0, 0]} />
@@ -2265,15 +1382,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                     <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R$${v}`} />
                     <Tooltip content={<CustomTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 12 }} formatter={(v) => <span className="text-[#888] text-xs">{v}</span>} />
-                    <Line
-                      type="monotone"
-                      dataKey="saldo"
-                      name="Saldo"
-                      stroke="#10B981"
-                      strokeWidth={2.5}
-                      dot={{ fill: "#10B981", r: 4 }}
-                      activeDot={{ r: 6, fill: "#10B981" }}
-                    />
+                    <Line type="monotone" dataKey="saldo" name="Saldo" stroke="#10B981" strokeWidth={2.5} dot={{ fill: "#10B981", r: 4 }} activeDot={{ r: 6, fill: "#10B981" }} />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -2315,7 +1424,6 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
             </div>
           </div>
         )}
-
 
         {/* ===== PERFIL ===== */}
         {activeTab === "perfil" && (
@@ -2553,7 +1661,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
         );
       })()}
 
-    </div>/* end min-h-screen */
+    </div>
   );
 }
 
@@ -2563,9 +1671,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => getSession());
 
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-  };
+  const handleLogin = (user: User) => setCurrentUser(user);
 
   const handleLogout = () => {
     saveSession(null);
