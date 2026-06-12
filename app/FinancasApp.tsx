@@ -89,13 +89,13 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
     e.preventDefault();
     setError("");
     if (!loginUser.trim() || !loginPass.trim()) {
-      setError("Preencha usuÃ¡rio e senha");
+      setError("Preencha Usuário e senha");
       return;
     }
     const users = getUsers();
     const found = users.find(u => u.username === loginUser.trim() && u.password === loginPass.trim());
     if (!found) {
-      setError("UsuÃ¡rio ou senha incorretos");
+      setError("Usuário ou senha incorretos");
       return;
     }
     saveSession(found);
@@ -112,7 +112,7 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
       return;
     }
     if (regPass !== regConfirm) {
-      setError("As senhas nÃ£o conferem");
+      setError("As senhas não conferem");
       return;
     }
     if (regPass.length < 4) {
@@ -122,11 +122,11 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
 
     const users = getUsers();
     if (users.some(u => u.username === regUser.trim())) {
-      setError("Este usuÃ¡rio jÃ¡ existe");
+      setError("Este Usuário jÃ¡ existe");
       return;
     }
     if (users.some(u => u.email === regEmail.trim())) {
-      setError("Este email jÃ¡ estÃ¡ cadastrado");
+      setError("Este email jÃ¡ está cadastrado");
       return;
     }
 
@@ -152,12 +152,12 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 mb-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="RV FinanÃ§a" className="w-20 h-20 object-contain" />
+            <img src="/logo.png" alt="RV Finança" className="w-20 h-20 object-contain" />
           </div>
           <h1 className="text-3xl font-extrabold m-0 bg-gradient-to-br from-orange-500 to-pink-500 bg-clip-text text-transparent">
-            RV FinanÃ§a
+            RV Finança
           </h1>
-          <p className="text-[#888] text-sm mt-2">Controle suas finanÃ§as de forma inteligente</p>
+          <p className="text-[#888] text-sm mt-2">Controle suas finanças de forma inteligente</p>
         </div>
 
         {/* Card */}
@@ -208,13 +208,13 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
                   <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
-                    UsuÃ¡rio
+                    Usuário
                   </label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                     <input
                       className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                      placeholder="Digite seu usuÃ¡rio"
+                      placeholder="Digite seu Usuário"
                       value={loginUser}
                       onChange={e => setLoginUser(e.target.value)}
                     />
@@ -282,13 +282,13 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
                 </div>
                 <div>
                   <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
-                    UsuÃ¡rio
+                    Usuário
                   </label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                     <input
                       className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                      placeholder="Escolha um usuÃ¡rio"
+                      placeholder="Escolha um Usuário"
                       value={regUser}
                       onChange={e => setRegUser(e.target.value)}
                     />
@@ -303,7 +303,7 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
                     <input
                       className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
                       type="password"
-                      placeholder="MÃ­nimo 4 caracteres"
+                      placeholder="Mínimo 4 caracteres"
                       value={regPass}
                       onChange={e => setRegPass(e.target.value)}
                     />
@@ -338,7 +338,7 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
         <p className="text-center text-[#666] text-xs mt-6">
           ðŸ”’ Seus dados ficam salvos apenas neste dispositivo.{" "}
           <span className="text-yellow-600">
-            NÃ£o use senhas importantes aqui.
+            Não use senhas importantes aqui.
           </span>
         </p>
       </div>
@@ -476,11 +476,11 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     if (!newEmail.trim()) { setError("Digite o novo email"); return; }
     if (!emailPass.trim()) { setError("Digite sua senha atual"); return; }
     if (emailPass !== user.password) { setError("Senha incorreta"); return; }
-    if (newEmail === user.email) { setError("O novo email Ã© igual ao atual"); return; }
+    if (newEmail === user.email) { setError("O novo email é igual ao atual"); return; }
 
     const users = getUsers();
     if (users.some(u => u.email === newEmail.trim() && u.id !== user.id)) {
-      setError("Este email jÃ¡ estÃ¡ em uso");
+      setError("Este email jÃ¡ está em uso");
       return;
     }
     const updated = { ...user, email: newEmail.trim() };
@@ -499,7 +499,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     if (currentPass !== user.password) { setError("Senha atual incorreta"); return; }
     if (!newPass.trim()) { setError("Digite a nova senha"); return; }
     if (newPass.length < 4) { setError("A nova senha deve ter pelo menos 4 caracteres"); return; }
-    if (newPass !== confirmPass) { setError("As senhas nÃ£o conferem"); return; }
+    if (newPass !== confirmPass) { setError("As senhas não conferem"); return; }
 
     const users = getUsers();
     const updated = { ...user, password: newPass.trim() };
@@ -699,7 +699,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                   <input
                     type={showNew ? "text" : "password"}
-                    placeholder="MÃ­nimo 4 caracteres"
+                    placeholder="Mínimo 4 caracteres"
                     value={newPass}
                     onChange={e => setNewPass(e.target.value)}
                     className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
@@ -752,9 +752,9 @@ interface DashboardScreenProps {
 function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProps) {
   const [selectedMonth, setSelectedMonth] = useState(4);
   // FIX: "perfil" adicionado ao tipo do activeTab
-  const [activeTab, setActiveTab] = useState<string>("visÃ£o geral");
+  const [activeTab, setActiveTab] = useState<string>("visão geral");
   const [showForm, setShowForm] = useState(false);
-  // FIX: editIncome removido â€” nÃ£o era usado para nada Ãºtil
+  // FIX: editIncome removido â€” não era usado para nada Ãºtil
   const [editingBudget, setEditingBudget] = useState<string | null>(null);
   const [tempBudget, setTempBudget] = useState<number>(0);
   const [modalAberto, setModalAberto] = useState(false);
@@ -763,7 +763,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
   const [cardForm, setCardForm] = useState({
     description: "",
     amount: "",
-    category: "AlimentaÃ§Ã£o",
+    category: "Alimentação",
     date: "",
     cardName: "",
     installments: "1",
@@ -853,7 +853,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
 
   const [form, setForm] = useState({
     description: "",
-    category: "AlimentaÃ§Ã£o",
+    category: "Alimentação",
     amount: "",
     date: formDefaultDate,
   });
@@ -864,7 +864,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
     if (finance.addExpense(form)) {
       setForm({
         description: "",
-        category: "AlimentaÃ§Ã£o",
+        category: "Alimentação",
         amount: "",
         date: `${currentYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`,
       });
@@ -906,9 +906,9 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
     return "#EF4444";
   };
 
-  // FIX: "perfil" adicionado aos tabs para ser acessÃ­vel via barra de navegaÃ§Ã£o
+  // FIX: "perfil" adicionado aos tabs para ser acessÃ­vel via barra de navegação
   const tabs = [
-    { id: "visÃ£o geral",   label: "VisÃ£o Geral",   icon: PieIcon },
+    { id: "visão geral",   label: "Visão Geral",   icon: PieIcon },
     { id: "gastos",        label: "Gastos",         icon: Receipt },
     { id: "investimentos", label: "Investimentos",  icon: TrendingUpIcon },
     { id: "histÃ³rico",     label: "HistÃ³rico",      icon: BarChart3 },
@@ -935,8 +935,8 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
             <div>
               <h1 className="text-2xl sm:text-[28px] font-extrabold m-0 flex items-center gap-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logo.png" alt="RV FinanÃ§a" className="w-9 h-9 sm:w-10 sm:h-10 object-contain" />
-                <span className="bg-gradient-to-br from-orange-500 to-pink-500 bg-clip-text text-transparent">RV FinanÃ§a</span>
+                <img src="/logo.png" alt="RV Finança" className="w-9 h-9 sm:w-10 sm:h-10 object-contain" />
+                <span className="bg-gradient-to-br from-orange-500 to-pink-500 bg-clip-text text-transparent">RV Finança</span>
               </h1>
               <div className="flex items-center gap-2 mt-1 relative" ref={profileMenuRef}>
                 <p className="text-[#888] text-[13px] m-0">OlÃ¡, <span className="text-orange-500 font-semibold">{user.name}</span>!</p>
@@ -1026,7 +1026,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   <div className="flex items-center justify-between mb-3">
                     <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
                       <Plus className="w-4 h-4 text-orange-500" />
-                      Novo LanÃ§amento
+                      Novo Lançamento
                     </CardTitle>
                     <button
                       onClick={() => setShowForm(false)}
@@ -1055,7 +1055,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                           : "text-[#888] hover:text-[#ccc]"
                       }`}
                     >
-                      <DollarSign className="w-3.5 h-3.5" /> CartÃ£o de CrÃ©dito
+                      <DollarSign className="w-3.5 h-3.5" /> Cartão de Crédito
                     </button>
                   </div>
                 </CardHeader>
@@ -1065,7 +1065,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                         <input
                           className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                          placeholder="DescriÃ§Ã£o do gasto"
+                          placeholder="Descrição do gasto"
                           value={form.description}
                           onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                         />
@@ -1106,7 +1106,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                         <input
                           className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#666] transition-colors"
-                          placeholder="DescriÃ§Ã£o (ex: Compra Mercado)"
+                          placeholder="Descrição (ex: Compra Mercado)"
                           value={cardForm.description}
                           onChange={e => setCardForm(f => ({ ...f, description: e.target.value }))}
                         />
@@ -1119,7 +1119,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                         />
                         <input
                           className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#666] transition-colors"
-                          placeholder="Nome do cartÃ£o (ex: Nubank)"
+                          placeholder="Nome do cartão (ex: Nubank)"
                           value={cardForm.cardName}
                           onChange={e => setCardForm(f => ({ ...f, cardName: e.target.value }))}
                         />
@@ -1181,7 +1181,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                               date: dateStr,
                             });
                           }
-                          setCardForm({ description: "", amount: "", category: "AlimentaÃ§Ã£o", date: "", cardName: "", installments: "1" });
+                          setCardForm({ description: "", amount: "", category: "Alimentação", date: "", cardName: "", installments: "1" });
                           setShowForm(false);
                         }}
                       >
@@ -1209,7 +1209,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
         </div>
 
         {/* ===== VISÃƒO GERAL ===== */}
-        {activeTab === "visÃ£o geral" && (
+        {activeTab === "visão geral" && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <StatCard
@@ -1263,10 +1263,10 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   )}
                   <p className="text-[#888] text-xs">
                     {finance.savingsRate >= 20
-                      ? "Excelente! Continue assim â€” vocÃª estÃ¡ economizando bem."
+                      ? "Excelente! Continue assim â€” você está economizando bem."
                       : finance.savingsRate >= 10
                         ? "Bom progresso, mas ainda dÃ¡ para melhorar."
-                        : "AtenÃ§Ã£o: seus gastos estÃ£o altos. Tente reduzir."}
+                        : "Atenção: seus gastos estão altos. Tente reduzir."}
                   </p>
                 </div>
               </CardContent>
@@ -1278,7 +1278,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
                       <PieIcon className="w-4 h-4 text-orange-500" />
-                      DistribuiÃ§Ã£o de Gastos
+                      Distribuição de Gastos
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -1382,7 +1382,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-orange-500" />
-                  EvoluÃ§Ã£o do Saldo Mensal
+                  Evolução do Saldo Mensal
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -1410,7 +1410,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
               </Card>
               <Card className="bg-white/[0.03] border-white/[0.07]">
                 <CardContent className="p-4">
-                  <p className="text-[#888] text-[11px] uppercase tracking-wider m-0">MÃ©dia Mensal</p>
+                  <p className="text-[#888] text-[11px] uppercase tracking-wider m-0">Média Mensal</p>
                   <p className="text-[#ccc] font-bold text-lg m-0 mt-1">
                     {formatBRL(finance.monthlyData.reduce((s, m) => s + m.total, 0) / 12)}
                   </p>
@@ -1466,7 +1466,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                   <input
                     type="text"
-                    placeholder="DescriÃ§Ã£o da receita"
+                    placeholder="Descrição da receita"
                     value={descReceita}
                     onChange={e => setDescReceita(e.target.value)}
                     className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full placeholder:text-[#666] transition-colors"
@@ -1601,20 +1601,20 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain" />
                       <div>
-                        <h1 className="text-xl font-extrabold text-gray-900">RV FinanÃ§a â€” Extrato Mensal</h1>
+                        <h1 className="text-xl font-extrabold text-gray-900">RV Finança â€” Extrato Mensal</h1>
                         <p className="text-sm text-gray-600">OlÃ¡, {user.name}! &nbsp;Â·&nbsp; PerÃ­odo: {MONTHS[extratoMes]}/2026</p>
                       </div>
                     </div>
                   </div>
 
                   {allItems.length === 0 ? (
-                    <p className="text-[#666] text-sm text-center py-6">Nenhum lanÃ§amento encontrado.</p>
+                    <p className="text-[#666] text-sm text-center py-6">Nenhum lançamento encontrado.</p>
                   ) : (
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-[#888] text-xs border-b border-white/[0.05] print:text-gray-500">
                           <th className="text-left py-2 font-medium">Data</th>
-                          <th className="text-left py-2 font-medium">DescriÃ§Ã£o</th>
+                          <th className="text-left py-2 font-medium">Descrição</th>
                           <th className="text-left py-2 font-medium hidden sm:table-cell">Categoria</th>
                           <th className="text-left py-2 font-medium">Tipo</th>
                           <th className="text-right py-2 font-medium">Valor</th>
@@ -1701,4 +1701,5 @@ export default function App() {
     />
   );
 }
+
 
