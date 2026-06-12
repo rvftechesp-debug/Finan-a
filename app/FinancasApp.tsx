@@ -1308,7 +1308,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   </CardContent>
                 </Card>
               )}
-
+                 </div> 
               <Card className="bg-white/[0.03] border-white/[0.07]">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
