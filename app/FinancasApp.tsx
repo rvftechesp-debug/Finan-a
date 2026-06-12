@@ -1365,13 +1365,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={240}>
-                  <AreaChart data={finance.monthlyData}>
-                    <defs>
-                      <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#F97316" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#F97316" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
+                  <BarChart data={finance.monthlyData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
                     <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R$ ${v}`} />
