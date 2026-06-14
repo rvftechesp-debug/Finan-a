@@ -91,6 +91,7 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
   const [regUser, setRegUser] = useState("");
   const [regPass, setRegPass] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
+  const [regConfirmPhone, setRegConfirmPhone] = useState("");
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,10 +120,16 @@ const handleRegister = (e: React.FormEvent) => {
     return;
   }
 
-  // Validar celular (mínimo 14 chars com máscara: (11) 99999-9999)
+  // Validar celular brasileiro (10 ou 11 dígitos)
   const phoneDigits = regPhone.replace(/\D/g, "");
   if (phoneDigits.length < 10 || phoneDigits.length > 11) {
-    setError("Celular inválido");
+    setError("Celular inválido. Use o formato (11) 99999-9999");
+    return;
+  }
+
+  // Confirmar celular
+  if (regPhone.trim() !== regConfirmPhone.trim()) {
+    setError("Os números de celular não conferem");
     return;
   }
 
@@ -148,7 +155,7 @@ const handleRegister = (e: React.FormEvent) => {
   const newUser: User = {
     id: Date.now().toString(),
     name: regName.trim(),
-    phone: regPhone.trim(),   // ← era: email
+    phone: regPhone.trim(),
     username: regUser.trim(),
     password: regPass.trim(),
   };
@@ -159,8 +166,6 @@ const handleRegister = (e: React.FormEvent) => {
   setSuccess("Conta criada com sucesso!");
   setTimeout(() => onLogin(newUser), 500);
 };
-
-
 
   return (
     <div className="min-h-screen bg-[#0d0d1a] text-[#f0f0f0] font-sans flex items-center justify-center px-4 py-8">
@@ -283,21 +288,37 @@ const handleRegister = (e: React.FormEvent) => {
                   </div>
                 </div>
                 <div>
-  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
-    Celular
-  </label>
-  <div className="relative">
-    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-    <input
-      className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-      type="tel"
-      placeholder="(11) 99999-9999"
-      value={regPhone}
-      onChange={e => setRegPhone(formatPhone(e.target.value))}
-      maxLength={15}
-    />
-  </div>
-</div>
+              <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
+              Celular
+              </label>
+              <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
+              <input
+              className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
+              type="tel"
+              placeholder="(11) 99999-9999"
+              value={regPhone}
+              onChange={e => setRegPhone(formatPhone(e.target.value))}
+              maxLength={15}
+              />
+              </div>
+              </div>
+              <div>
+              <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
+              Confirmar Celular
+              </label>
+              <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
+              <input
+              className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
+              type="tel"
+              placeholder="(11) 99999-9999"
+              value={regConfirmPhone}
+              onChange={e => setRegConfirmPhone(formatPhone(e.target.value))}
+              maxLength={15}
+              />
+              </div>
+              </div>
                 <div>
                   <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
                     Usuário
