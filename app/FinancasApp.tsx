@@ -11,7 +11,7 @@ import {
   Receipt, CalendarDays, ChevronRight, AlertTriangle, CheckCircle2,
   PiggyBank, LogIn, UserPlus, LogOut, Eye, EyeOff, Lock, User, Mail,
   PlusCircle, DollarSign, Settings, KeyRound, ShieldCheck, TrendingUpIcon, Zap, Loader,
-  FileText, Printer, Paperclip
+  FileText, Printer, Paperclip, Phone
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -28,11 +28,12 @@ import type { Expense } from "@/app/types";
 interface User {
   id: string;
   name: string;
-  email: string;
+  phone: string;      // ← era: email: string
   username: string;
   password: string;
   photo?: string;
 }
+
 
 const STORAGE_USERS = "financas-users";
 const STORAGE_SESSION = "financas-session";
@@ -66,6 +67,12 @@ function saveSession(user: User | null) {
     localStorage.removeItem(STORAGE_SESSION);
   }
 }
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 7) return `(${digits.slice(0,2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0,2)}) ${digits.slice(2,7)}-${digits.slice(7)}`;
+}
 
 
 // ===================== AUTH SCREEN =====================
@@ -80,7 +87,7 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
   const [loginPass, setLoginPass] = useState("");
 
   const [regName, setRegName] = useState("");
-  const [regEmail, setRegEmail] = useState("");
+  const [regPhone, setRegPhone] = useState("");
   const [regUser, setRegUser] = useState("");
   const [regPass, setRegPass] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
@@ -102,48 +109,58 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
     onLogin(found);
   };
 
-  const handleRegister = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setSuccess("");
+const handleRegister = (e: React.FormEvent) => {
+  e.preventDefault();
+  setError("");
+  setSuccess("");
 
-    if (!regName.trim() || !regEmail.trim() || !regUser.trim() || !regPass.trim()) {
-      setError("Preencha todos os campos");
-      return;
-    }
-    if (regPass !== regConfirm) {
-      setError("As senhas não conferem");
-      return;
-    }
-    if (regPass.length < 4) {
-      setError("A senha deve ter pelo menos 4 caracteres");
-      return;
-    }
+  if (!regName.trim() || !regPhone.trim() || !regUser.trim() || !regPass.trim()) {
+    setError("Preencha todos os campos");
+    return;
+  }
 
-    const users = getUsers();
-    if (users.some(u => u.username === regUser.trim())) {
-      setError("Este Usuário jÃ¡ existe");
-      return;
-    }
-    if (users.some(u => u.email === regEmail.trim())) {
-      setError("Este email jÃ¡ está cadastrado");
-      return;
-    }
+  // Validar celular (mínimo 14 chars com máscara: (11) 99999-9999)
+  const phoneDigits = regPhone.replace(/\D/g, "");
+  if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+    setError("Celular inválido");
+    return;
+  }
 
-    const newUser: User = {
-      id: Date.now().toString(),
-      name: regName.trim(),
-      email: regEmail.trim(),
-      username: regUser.trim(),
-      password: regPass.trim(),
-    };
+  if (regPass !== regConfirm) {
+    setError("As senhas não conferem");
+    return;
+  }
+  if (regPass.length < 4) {
+    setError("A senha deve ter pelo menos 4 caracteres");
+    return;
+  }
 
-    users.push(newUser);
-    saveUsers(users);
-    saveSession(newUser);
-    setSuccess("Conta criada com sucesso!");
-    setTimeout(() => onLogin(newUser), 500);
+  const users = getUsers();
+  if (users.some(u => u.username === regUser.trim())) {
+    setError("Este usuário já existe");
+    return;
+  }
+  if (users.some(u => u.phone === regPhone.trim())) {
+    setError("Este celular já está cadastrado");
+    return;
+  }
+
+  const newUser: User = {
+    id: Date.now().toString(),
+    name: regName.trim(),
+    phone: regPhone.trim(),   // ← era: email
+    username: regUser.trim(),
+    password: regPass.trim(),
   };
+
+  users.push(newUser);
+  saveUsers(users);
+  saveSession(newUser);
+  setSuccess("Conta criada com sucesso!");
+  setTimeout(() => onLogin(newUser), 500);
+};
+
+
 
   return (
     <div className="min-h-screen bg-[#0d0d1a] text-[#f0f0f0] font-sans flex items-center justify-center px-4 py-8">
@@ -266,20 +283,21 @@ function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
-                    Email
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input
-                      className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                      type="email"
-                      placeholder="seu@email.com"
-                      value={regEmail}
-                      onChange={e => setRegEmail(e.target.value)}
-                    />
-                  </div>
-                </div>
+  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
+    Celular
+  </label>
+  <div className="relative">
+    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
+    <input
+      className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
+      type="tel"
+      placeholder="(11) 99999-9999"
+      value={regPhone}
+      onChange={e => setRegPhone(formatPhone(e.target.value))}
+      maxLength={15}
+    />
+  </div>
+</div>
                 <div>
                   <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
                     Usuário
@@ -415,9 +433,9 @@ const StatCard = ({ title, value, color, icon: Icon, editable, onEdit }: {
 function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => void }) {
   const [tab, setTab] = useState<"foto" | "email" | "senha">("foto");
 
-  // Email fields
-  const [newEmail, setNewEmail] = useState("");
-  const [emailPass, setEmailPass] = useState("");
+  // Phone fields
+  const [newPhone, setNewPhone] = useState("");
+  const [phonePass, setPhonePass] = useState("");
 
   // Password fields
   const [currentPass, setCurrentPass] = useState("");
@@ -441,7 +459,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      setError("Arquivo muito grande (mÃ¡ximo 5MB)");
+      setError("Arquivo muito grande (máximo 5MB)");
       return;
     }
 
@@ -470,26 +488,38 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     }
   };
 
-  const handleEmailChange = (e: React.FormEvent) => {
+  const handlePhoneChange = (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
-    if (!newEmail.trim()) { setError("Digite o novo email"); return; }
-    if (!emailPass.trim()) { setError("Digite sua senha atual"); return; }
-    if (emailPass !== user.password) { setError("Senha incorreta"); return; }
-    if (newEmail === user.email) { setError("O novo email é igual ao atual"); return; }
 
-    const users = getUsers();
-    if (users.some(u => u.email === newEmail.trim() && u.id !== user.id)) {
-      setError("Este email jÃ¡ está em uso");
+    if (!newPhone.trim()) { setError("Digite o novo celular"); return; }
+    if (!phonePass.trim()) { setError("Digite sua senha atual"); return; }
+    if (phonePass !== user.password) { setError("Senha incorreta"); return; }
+
+    const phoneDigits = newPhone.replace(/\D/g, "");
+    if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+      setError("Celular inválido");
       return;
     }
-    const updated = { ...user, email: newEmail.trim() };
+
+    if (newPhone.trim() === user.phone) {
+      setError("O novo celular é igual ao atual");
+      return;
+    }
+
+    const users = getUsers();
+    if (users.some(u => u.phone === newPhone.trim() && u.id !== user.id)) {
+      setError("Este celular já está em uso");
+      return;
+    }
+
+    const updated = { ...user, phone: newPhone.trim() };
     saveUsers(users.map(u => u.id === user.id ? updated : u));
     saveSession(updated);
     onUpdate(updated);
-    setSuccess("Email atualizado com sucesso!");
-    setNewEmail("");
-    setEmailPass("");
+    setSuccess("Celular atualizado com sucesso!");
+    setNewPhone("");
+    setPhonePass("");
   };
 
   const handlePasswordChange = (e: React.FormEvent) => {
@@ -528,12 +558,12 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
           <div>
             <p className="font-bold text-white text-base">{user.name}</p>
             <p className="text-[#888] text-sm">@{user.username}</p>
-            <p className="text-[#888] text-xs mt-0.5">{user.email}</p>
+            <p className="text-[#888] text-xs mt-0.5">{user.phone}</p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Tab toggle â€” agora com 3 abas */}
+      {/* Tab toggle */}
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => { setTab("foto"); clearMessages(); }}
@@ -553,7 +583,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
               : "bg-white/[0.03] border-white/[0.07] text-[#888] hover:text-white"
           }`}
         >
-          <Mail className="w-4 h-4" /> Alterar Email
+          <Phone className="w-4 h-4" /> Alterar Celular
         </button>
         <button
           onClick={() => { setTab("senha"); clearMessages(); }}
@@ -581,7 +611,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
         </div>
       )}
 
-      {/* â”€â”€ Foto tab â”€â”€ */}
+      {/* ── Foto tab ── */}
       {tab === "foto" && (
         <Card className="bg-white/[0.03] border-white/[0.07]">
           <CardHeader className="pb-2">
@@ -609,49 +639,58 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                 <Paperclip className="w-4 h-4" /> Escolher Foto
               </span>
             </label>
-            <p className="text-[#666] text-xs text-center">Tamanho mÃ¡ximo: 5MB. A imagem serÃ¡ comprimida automaticamente.</p>
+            <p className="text-[#666] text-xs text-center">
+              Tamanho máximo: 5MB. A imagem será comprimida automaticamente.
+            </p>
           </CardContent>
         </Card>
       )}
 
-      {/* â”€â”€ Email form â”€â”€ */}
+      {/* ── Celular tab ── */}
       {tab === "email" && (
         <Card className="bg-white/[0.03] border-white/[0.07]">
           <CardHeader className="pb-2">
             <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
-              <Mail className="w-4 h-4 text-orange-500" /> Alterar Email
+              <Phone className="w-4 h-4 text-orange-500" /> Alterar Celular
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleEmailChange} className="space-y-3">
+            <form onSubmit={handlePhoneChange} className="space-y-3">
               <div>
-                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Email Atual</label>
+                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
+                  Celular Atual
+                </label>
                 <div className="bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-[#666]">
-                  {user.email}
+                  {user.phone}
                 </div>
               </div>
               <div>
-                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Novo Email</label>
+                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
+                  Novo Celular
+                </label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                   <input
-                    type="email"
-                    placeholder="novo@email.com"
-                    value={newEmail}
-                    onChange={e => setNewEmail(e.target.value)}
+                    type="tel"
+                    placeholder="(11) 99999-9999"
+                    value={newPhone}
+                    onChange={e => setNewPhone(formatPhone(e.target.value))}
+                    maxLength={15}
                     className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
                   />
                 </div>
               </div>
               <div>
-                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Confirme sua Senha</label>
+                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
+                  Confirme sua Senha
+                </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                   <input
                     type="password"
                     placeholder="Digite sua senha atual"
-                    value={emailPass}
-                    onChange={e => setEmailPass(e.target.value)}
+                    value={phonePass}
+                    onChange={e => setPhonePass(e.target.value)}
                     className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
                   />
                 </div>
@@ -660,14 +699,14 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                 type="submit"
                 className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 mt-1"
               >
-                <Check className="w-4 h-4" /> Salvar Novo Email
+                <Check className="w-4 h-4" /> Salvar Novo Celular
               </button>
             </form>
           </CardContent>
         </Card>
       )}
 
-      {/* â”€â”€ Password form â”€â”€ */}
+      {/* ── Senha tab ── */}
       {tab === "senha" && (
         <Card className="bg-white/[0.03] border-white/[0.07]">
           <CardHeader className="pb-2">
@@ -678,7 +717,9 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
           <CardContent>
             <form onSubmit={handlePasswordChange} className="space-y-3">
               <div>
-                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Senha Atual</label>
+                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
+                  Senha Atual
+                </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                   <input
@@ -688,13 +729,19 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                     onChange={e => setCurrentPass(e.target.value)}
                     className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
                   />
-                  <button type="button" onClick={() => setShowCurrent(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer">
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrent(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer"
+                  >
                     {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
               <div>
-                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Nova Senha</label>
+                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
+                  Nova Senha
+                </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                   <input
@@ -704,13 +751,19 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                     onChange={e => setNewPass(e.target.value)}
                     className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
                   />
-                  <button type="button" onClick={() => setShowNew(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer">
+                  <button
+                    type="button"
+                    onClick={() => setShowNew(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer"
+                  >
                     {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
               <div>
-                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Confirmar Nova Senha</label>
+                <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
+                  Confirmar Nova Senha
+                </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                   <input
@@ -720,7 +773,11 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                     onChange={e => setConfirmPass(e.target.value)}
                     className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
                   />
-                  <button type="button" onClick={() => setShowConfirm(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer"
+                  >
                     {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
