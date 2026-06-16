@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useCallback } from "react";
-import { useLocalStorage } from "./useLocalStorage";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
 import type { Expense, Budget } from "@/app/types";
 
 export const CATEGORIES = [
@@ -33,54 +33,123 @@ const defaultBudgets: Budget[] = CATEGORIES.map(c => ({
   limit: 500,
 }));
 
-// ─── hook ────────────────────────────────────────────────────────────────────
+// Pega o userId logado direto do Supabase Auth
+async function getCurrentUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user?.id ?? null;
+}
 
 export function useFinance(selectedMonth?: number) {
-  const userId = (() => {
-    if (typeof window === "undefined") return "guest";
-    try {
-      const session = window.localStorage.getItem("financas-session");
-      if (!session) return "guest";
-      const parsed = JSON.parse(session);
-      return parsed?.id ?? "guest";
-    } catch {
-      return "guest";
-    }
-  })();
-
-  const expensesKey = `financas-expenses-${userId}`;
-  const budgetsKey  = `financas-budgets-${userId}`;
-  const incomesKey  = `financas-incomes-${userId}`;
-
-  // ✅ FIX 1: removido initialExpenses hardcoded — array vazio para novos usuários
-  // ✅ FIX 2: removida chave income separada — income calculado dinamicamente
-  const [expenses,       setExpenses]       = useLocalStorage<Expense[]>(expensesKey, []);
-  const [budgets,        setBudgets]        = useLocalStorage<Budget[]>(budgetsKey, defaultBudgets);
-  const [incomeEntries,  setIncomeEntries]  = useLocalStorage<IncomeEntry[]>(incomesKey, []);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>(defaultBudgets);
+  const [loading, setLoading] = useState(true);
 
   const month = selectedMonth ?? new Date().getMonth();
 
-  // ✅ FIX 3: income = soma real de TODAS as receitas cadastradas
-  const income = useMemo(() =>
-    incomeEntries.reduce((s, e) => s + e.amount, 0),
-    [incomeEntries]
+  // ── Busca userId ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    getCurrentUserId().then(setUserId);
+  }, []);
+
+  // ── Carrega dados do Supabase ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!userId) return;
+
+    async function load() {
+      setLoading(true);
+      try {
+        const [expRes, incRes, budRes] = await Promise.all([
+          supabase
+            .from("expenses")
+            .select("*")
+            .eq("user_id", userId)
+            .order("date", { ascending: false }),
+          supabase
+            .from("incomes")
+            .select("*")
+            .eq("user_id", userId)
+            .order("date", { ascending: false }),
+          supabase
+            .from("budgets")
+            .select("*")
+            .eq("user_id", userId),
+        ]);
+
+        if (expRes.data) {
+          setExpenses(
+            expRes.data.map(e => ({
+              id:             e.id,
+              description:    e.description,
+              category:       e.category,
+              amount:         Number(e.amount),
+              date:           e.date,
+              attachment:     e.attachment ?? undefined,
+              attachmentName: e.attachment_name ?? undefined,
+            }))
+          );
+        }
+
+        if (incRes.data) {
+          setIncomeEntries(
+            incRes.data.map(e => ({
+              id:             e.id,
+              description:    e.description,
+              type:           e.type,
+              amount:         Number(e.amount),
+              date:           e.date,
+              attachment:     e.attachment ?? undefined,
+              attachmentName: e.attachment_name ?? undefined,
+            }))
+          );
+        }
+
+        if (budRes.data && budRes.data.length > 0) {
+          setBudgets(
+            budRes.data.map(b => ({
+              category: b.category,
+              limit:    Number(b.limit),
+            }))
+          );
+        } else if (userId) {
+          // Primeiro acesso: cria orçamentos padrão
+          await supabase.from("budgets").insert(
+            defaultBudgets.map(b => ({
+              user_id:  userId,
+              category: b.category,
+              limit:    b.limit,
+            }))
+          );
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, [userId]);
+
+  // ── Cálculos ──────────────────────────────────────────────────────────────
+
+  const filtered = useMemo(() =>
+    expenses.filter(e => new Date(e.date + "T00:00:00").getMonth() === month),
+    [expenses, month]
   );
 
-  // Receitas do mês selecionado
   const filteredIncomes = useMemo(() =>
     incomeEntries.filter(e => new Date(e.date + "T00:00:00").getMonth() === month),
     [incomeEntries, month]
   );
 
-  // Renda apenas do mês selecionado
   const monthlyIncome = useMemo(() =>
     filteredIncomes.reduce((s, e) => s + e.amount, 0),
     [filteredIncomes]
   );
 
-  const filtered = useMemo(() =>
-    expenses.filter(e => new Date(e.date + "T00:00:00").getMonth() === month),
-    [expenses, month]
+  const income = useMemo(() =>
+    incomeEntries.reduce((s, e) => s + e.amount, 0),
+    [incomeEntries]
   );
 
   const totalExpenses = useMemo(() =>
@@ -88,37 +157,32 @@ export function useFinance(selectedMonth?: number) {
     [filtered]
   );
 
-  // Saldo e taxa baseados no mês selecionado
   const balance     = monthlyIncome - totalExpenses;
   const savingsRate = monthlyIncome > 0 ? (balance / monthlyIncome) * 100 : 0;
 
   const byCategory = useMemo(() => {
     const map: Record<string, number> = {};
-    filtered.forEach(e => {
-      map[e.category] = (map[e.category] || 0) + e.amount;
-    });
+    filtered.forEach(e => { map[e.category] = (map[e.category] || 0) + e.amount; });
     return CATEGORIES.map(c => ({ ...c, value: map[c.name] || 0 }));
   }, [filtered]);
 
   const byCategoryFiltered = useMemo(() =>
-    byCategory.filter(c => c.value > 0),
-    [byCategory]
+    byCategory.filter(c => c.value > 0), [byCategory]
   );
 
   const sortedByCategory = useMemo(() =>
-    [...byCategoryFiltered].sort((a, b) => b.value - a.value),
-    [byCategoryFiltered]
+    [...byCategoryFiltered].sort((a, b) => b.value - a.value), [byCategoryFiltered]
   );
 
   const topCategory = sortedByCategory[0];
 
   const monthlyData = useMemo(() =>
-    MONTHS.map((m, i) => {
-      const total = expenses
+    MONTHS.map((m, i) => ({
+      month: m,
+      total: expenses
         .filter(e => new Date(e.date + "T00:00:00").getMonth() === i)
-        .reduce((s, e) => s + e.amount, 0);
-      return { month: m, total };
-    }),
+        .reduce((s, e) => s + e.amount, 0),
+    })),
     [expenses]
   );
 
@@ -145,83 +209,115 @@ export function useFinance(selectedMonth?: number) {
     [byCategory, budgets]
   );
 
-  const addExpense = useCallback((form: {
-    description: string;
-    category: string;
-    amount: string;
-    date: string;
-  }) => {
-    if (!form.description || !form.amount || isNaN(parseFloat(form.amount))) return false;
-    setExpenses(prev => [...prev, {
-      ...form,
-      id: Date.now(),
-      amount: parseFloat(form.amount),
-    }]);
-    return true;
-  }, [setExpenses]);
-
-  const removeExpense = useCallback((id: number) => {
-    setExpenses(prev => prev.filter(e => e.id !== id));
-  }, [setExpenses]);
-
-  const updateExpense = useCallback((updated: Expense) => {
-    setExpenses(prev => prev.map(e => e.id === updated.id ? updated : e));
-  }, [setExpenses]);
-
-  // ✅ FIX 4: updateIncome não manipula mais income manualmente
-  //    — recalculado automaticamente pelo useMemo
-  const updateIncome = useCallback((updated: IncomeEntry, _oldAmount?: number) => {
-    setIncomeEntries(prev => prev.map(e => e.id === updated.id ? updated : e));
-  }, [setIncomeEntries]);
-
-  const updateBudget = useCallback((category: string, limit: number) => {
-    setBudgets(prev =>
-      prev.map(b => b.category === category ? { ...b, limit } : b)
-    );
-  }, [setBudgets]);
-
   const getTip = useCallback(() => {
     if (!topCategory || totalExpenses === 0) return null;
-    const pct     = (topCategory.value / totalExpenses) * 100;
-    const savings = topCategory.value * 0.1;
     return {
-      icon: topCategory.icon,
+      icon:         topCategory.icon,
       categoryName: topCategory.name,
-      pct: pct.toFixed(0),
-      savings,
+      pct:          ((topCategory.value / totalExpenses) * 100).toFixed(0),
+      savings:      topCategory.value * 0.1,
     };
   }, [topCategory, totalExpenses]);
 
   const tip = getTip();
 
-  const addIncome = useCallback((
-    amount: string,
-    description: string = "Receita",
-    type: string = "Salário",
-    date: string = new Date().toISOString().split("T")[0]
-  ) => {
-    if (!amount || isNaN(parseFloat(amount))) return false;
-    const value = parseFloat(amount);
-    setIncomeEntries(prev => [...prev, {
-      id: Date.now(),
-      description,
-      type,
-      amount: value,
-      date,
+  // ── Mutations ─────────────────────────────────────────────────────────────
+
+  const addExpense = useCallback(async (form: {
+    description: string; category: string; amount: string; date: string;
+  }) => {
+    if (!userId || !form.description || !form.amount || isNaN(parseFloat(form.amount)))
+      return false;
+
+    const newId = Date.now();
+    const row = {
+      id:          newId,
+      user_id:     userId,
+      description: form.description,
+      category:    form.category,
+      amount:      parseFloat(form.amount),
+      date:        form.date,
+    };
+
+    const { error } = await supabase.from("expenses").insert(row);
+    if (error) { console.error(error); return false; }
+
+    setExpenses(prev => [...prev, {
+      id: newId, description: form.description,
+      category: form.category, amount: parseFloat(form.amount), date: form.date,
     }]);
     return true;
-  }, [setIncomeEntries]);
+  }, [userId]);
 
-  // ✅ FIX 4: removeIncome não manipula mais income manualmente
-  const removeIncome = useCallback((id: number, _amount?: number) => {
+  const removeExpense = useCallback(async (id: number) => {
+    await supabase.from("expenses").delete().eq("id", id).eq("user_id", userId);
+    setExpenses(prev => prev.filter(e => e.id !== id));
+  }, [userId]);
+
+  const updateExpense = useCallback(async (updated: Expense) => {
+    await supabase.from("expenses").update({
+      description:     updated.description,
+      category:        updated.category,
+      amount:          updated.amount,
+      date:            updated.date,
+      attachment:      updated.attachment ?? null,
+      attachment_name: updated.attachmentName ?? null,
+    }).eq("id", updated.id).eq("user_id", userId);
+
+    setExpenses(prev => prev.map(e => e.id === updated.id ? updated : e));
+  }, [userId]);
+
+  const addIncome = useCallback(async (
+    amount: string,
+    description = "Receita",
+    type = "Salário",
+    date = new Date().toISOString().split("T")[0]
+  ) => {
+    if (!userId || !amount || isNaN(parseFloat(amount))) return false;
+
+    const newId = Date.now();
+    const value = parseFloat(amount);
+
+    const { error } = await supabase.from("incomes").insert({
+      id: newId, user_id: userId, description, type, amount: value, date,
+    });
+    if (error) { console.error(error); return false; }
+
+    setIncomeEntries(prev => [...prev, { id: newId, description, type, amount: value, date }]);
+    return true;
+  }, [userId]);
+
+  const removeIncome = useCallback(async (id: number) => {
+    await supabase.from("incomes").delete().eq("id", id).eq("user_id", userId);
     setIncomeEntries(prev => prev.filter(e => e.id !== id));
-  }, [setIncomeEntries]);
+  }, [userId]);
+
+  const updateIncome = useCallback(async (updated: IncomeEntry) => {
+    await supabase.from("incomes").update({
+      description:     updated.description,
+      type:            updated.type,
+      amount:          updated.amount,
+      date:            updated.date,
+      attachment:      updated.attachment ?? null,
+      attachment_name: updated.attachmentName ?? null,
+    }).eq("id", updated.id).eq("user_id", userId);
+
+    setIncomeEntries(prev => prev.map(e => e.id === updated.id ? updated : e));
+  }, [userId]);
+
+  const updateBudget = useCallback(async (category: string, limit: number) => {
+    await supabase.from("budgets")
+      .upsert({ user_id: userId, category, limit }, { onConflict: "user_id,category" });
+
+    setBudgets(prev => prev.map(b => b.category === category ? { ...b, limit } : b));
+  }, [userId]);
 
   return {
+    loading,
     expenses,
     income,
     monthlyIncome,
-    setIncome: () => {}, // mantido para compatibilidade
+    setIncome: () => {},
     budgets,
     updateBudget,
     filtered,

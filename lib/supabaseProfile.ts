@@ -1,19 +1,20 @@
+// @/lib/supabaseProfile.ts
 import { supabase } from "@/lib/supabase";
 
-// ── Tipo espelhando a tabela public.users ──────────────────────
 export interface Profile {
   id: string;
   name: string;
   phone: string;
   username: string;
+  email: string;
   photo?: string;
+  totp_secret?: string;
 }
 
-// ── Busca perfil pelo UUID do auth ─────────────────────────────
 export async function getProfile(id: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from("users")
-    .select("id, name, phone, username, photo")
+    .select("id, name, phone, username, email, photo, totp_secret")
     .eq("id", id)
     .single();
 
@@ -21,51 +22,71 @@ export async function getProfile(id: string): Promise<Profile | null> {
   return data as Profile;
 }
 
-// ── Cria perfil após signUp ────────────────────────────────────
 export async function createProfile(profile: Profile): Promise<boolean> {
   const { error } = await supabase.from("users").insert({
-    id:       profile.id,
-    name:     profile.name,
-    phone:    profile.phone,
-    username: profile.username,
-    photo:    profile.photo ?? null,
-    email:    null,
+    id:          profile.id,
+    name:        profile.name,
+    phone:       profile.phone,
+    username:    profile.username,
+    email:       profile.email,
+    photo:       profile.photo ?? null,
+    totp_secret: profile.totp_secret ?? null,
   });
-
   return !error;
 }
 
-// ── Atualiza campos do perfil ──────────────────────────────────
 export async function updateProfile(
   id: string,
-  fields: Partial<Pick<Profile, "name" | "phone" | "photo" | "username">>
+  fields: Partial<Pick<Profile, "name" | "phone" | "photo" | "username" | "email" | "totp_secret">>
 ): Promise<boolean> {
   const { error } = await supabase
     .from("users")
     .update(fields)
     .eq("id", id);
-
   return !error;
 }
 
-// ── Verifica se username já existe ────────────────────────────
 export async function usernameExists(username: string): Promise<boolean> {
   const { data } = await supabase
     .from("users")
     .select("id")
     .eq("username", username)
     .maybeSingle();
-
   return !!data;
 }
 
-// ── Verifica se telefone já existe ────────────────────────────
 export async function phoneExists(phone: string): Promise<boolean> {
   const { data } = await supabase
     .from("users")
     .select("id")
     .eq("phone", phone)
     .maybeSingle();
-
   return !!data;
+}
+
+export async function emailExists(email: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("users")
+    .select("id")
+    .eq("email", email.toLowerCase())
+    .maybeSingle();
+  return !!data;
+}
+
+export async function getEmailByUsername(username: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("users")
+    .select("email")
+    .eq("username", username.toLowerCase())
+    .maybeSingle();
+  return data?.email ?? null;
+}
+
+export async function getTotpSecretByUserId(id: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("users")
+    .select("totp_secret")
+    .eq("id", id)
+    .maybeSingle();
+  return data?.totp_secret ?? null;
 }
