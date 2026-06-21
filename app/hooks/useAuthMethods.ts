@@ -56,13 +56,11 @@ export function useAuthMethods(userId: string | null): UseAuthMethodsReturn {
     fetchMethods()
   }, [fetchMethods])
 
-  // ✅ useMemo para evitar recalculo desnecessário
   const totalAtivos = useMemo(
     () => Object.values(methods).filter(Boolean).length,
     [methods]
   )
 
-  // ✅ useCallback para estabilizar referência e evitar closure stale
   const isDisabled = useCallback(
     (method: AuthMethod): boolean => {
       return methods[method] && totalAtivos === 1
@@ -70,50 +68,48 @@ export function useAuthMethods(userId: string | null): UseAuthMethodsReturn {
     [methods, totalAtivos]
   )
 
-  // ✅ useCallback com dependências corretas
-  const toggle = useCallback(
-    async (method: AuthMethod, active: boolean): Promise<string | null> => {
-      if (!userId) return 'Usuário não autenticado'
+const toggle = useCallback(
+  async (method: AuthMethod, active: boolean): Promise<string | null> => {
+    if (!userId) return 'Usuário não autenticado'
 
-      if (!active && totalAtivos === 1 && methods[method]) {
-        return 'Mantenha pelo menos 1 método ativo para garantir o acesso à conta.'
-      }
+    if (!active && totalAtivos === 1 && methods[method]) {
+      return 'Mantenha pelo menos 1 método ativo para garantir o acesso à conta.'
+    }
 
-      setToggling(method)
+    setToggling(method)
 
-      try {
-        const { data: existing } = await supabase
-          .from('user_auth_methods')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('method', method)
-          .single()
-
-        let error
-
-        if (existing) {
-          ;({ error } = await supabase
-            .from('user_auth_methods')
-            .update({ is_active: active, updated_at: new Date().toISOString() })
-            .eq('id', existing.id))
-        } else {
-          ;({ error } = await supabase
-            .from('user_auth_methods')
-            .insert({ user_id: userId, method, is_active: active }))
-        }
-
-        if (error) return 'Erro ao salvar. Tente novamente.'
-
-        setMethods((prev) => ({ ...prev, [method]: active }))
-        return null
-      } catch {
-        return 'Erro inesperado. Tente novamente.'
-      } finally {
-        setToggling(null)
-      }
+    try {
+const { error } = await supabase
+  .from('user_auth_methods')
+  .upsert(
+    {
+      user_id: userId,
+      method,
+      is_active: active,
+      updated_at: new Date().toISOString(),
     },
-    [userId, methods, totalAtivos]
+    { 
+      onConflict: 'user_id,method',
+      ignoreDuplicates: false  // garante que UPDATE acontece
+    }
   )
+
+if (error) {
+  console.error('Erro upsert:', error.message, error.details, error.hint)
+ }
+
+
+      setMethods(prev => ({ ...prev, [method]: active }))
+      return null
+    } catch (err) {
+      console.error('Erro inesperado:', err)
+      return 'Erro inesperado. Tente novamente.'
+    } finally {
+      setToggling(null)
+    }
+  },
+  [userId, methods, totalAtivos]
+)
 
   return {
     methods,
