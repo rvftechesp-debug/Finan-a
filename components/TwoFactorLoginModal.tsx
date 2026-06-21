@@ -1,18 +1,16 @@
-// @/components/TwoFactorLoginModal.tsx
-"use client";
+﻿"use client";
 
 import { useState } from "react";
-import { verifyTotpCode } from "@/lib/totp";
 import { ShieldCheck, AlertTriangle, Loader, KeyRound, X } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface Props {
-  secret: string;
+  userId: string;   // ✅ apenas o ID, sem secret
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export default function TwoFactorLoginModal({ secret, onSuccess, onCancel }: Props) {
+export default function TwoFactorLoginModal({ userId, onSuccess, onCancel }: Props) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,18 +26,28 @@ export default function TwoFactorLoginModal({ secret, onSuccess, onCancel }: Pro
     }
 
     setLoading(true);
-    await new Promise(r => setTimeout(r, 600));
+    try {
+      // ✅ Validação feita no servidor — secret nunca sai do banco
+      const res = await fetch("/api/verify-totp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, totpCode: cleaned }),
+      });
 
-    const valid = verifyTotpCode(secret, cleaned);
-    setLoading(false);
+      const result = await res.json();
 
-    if (!valid) {
-      setError("Código inválido ou expirado. Tente novamente.");
-      setCode("");
-      return;
+      if (!res.ok || result.error) {
+        setError(result.error ?? "Código inválido ou expirado. Tente novamente.");
+        setCode("");
+        return;
+      }
+
+      onSuccess();
+    } catch {
+      setError("Erro ao verificar. Tente novamente.");
+    } finally {
+      setLoading(false);
     }
-
-    onSuccess();
   };
 
   return (
@@ -47,7 +55,6 @@ export default function TwoFactorLoginModal({ secret, onSuccess, onCancel }: Pro
       <Card className="bg-[#0d0d1a] border-white/[0.07] w-full max-w-[400px] overflow-hidden">
         <CardContent className="p-6">
 
-          {/* Header */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/20 flex items-center justify-center flex-shrink-0">
@@ -62,15 +69,11 @@ export default function TwoFactorLoginModal({ secret, onSuccess, onCancel }: Pro
                 </p>
               </div>
             </div>
-            <button
-              onClick={onCancel}
-              className="text-[#888] hover:text-white transition-colors cursor-pointer"
-            >
+            <button onClick={onCancel} className="text-[#888] hover:text-white transition-colors cursor-pointer">
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Ícone central */}
           <div className="flex justify-center mb-5">
             <div className="w-20 h-20 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
               <ShieldCheck className="w-10 h-10 text-orange-500" />
@@ -82,7 +85,6 @@ export default function TwoFactorLoginModal({ secret, onSuccess, onCancel }: Pro
             pelo seu aplicativo autenticador para continuar.
           </p>
 
-          {/* Erro */}
           {error && (
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
@@ -90,7 +92,6 @@ export default function TwoFactorLoginModal({ secret, onSuccess, onCancel }: Pro
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleVerify} className="space-y-3">
             <div>
               <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
@@ -116,10 +117,7 @@ export default function TwoFactorLoginModal({ secret, onSuccess, onCancel }: Pro
               disabled={loading || code.length !== 6}
               className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl py-3 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 disabled:opacity-50"
             >
-              {loading
-                ? <Loader className="w-4 h-4 animate-spin" />
-                : <ShieldCheck className="w-4 h-4" />
-              }
+              {loading ? <Loader className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
               {loading ? "Verificando..." : "Confirmar Acesso"}
             </button>
 

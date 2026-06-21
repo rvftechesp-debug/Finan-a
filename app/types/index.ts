@@ -1,9 +1,12 @@
 export interface Expense {
   id: number;
   description: string;
-  category: string;
   amount: number;
+  category: string;
   date: string;
+  due_date?: string | null;   // ← adicione
+  status?: "pending" | "paid";
+  paid_at?: string | null;
   attachment?: string;
   attachmentName?: string;
   cardName?: string;

@@ -26,6 +26,9 @@ export interface IncomeEntry {
   date: string;
   attachment?: string;
   attachmentName?: string;
+  status?: "pending" | "paid" | "canceled";
+  due_date?: string | null;
+  paid_at?: string | null;
 }
 
 const defaultBudgets: Budget[] = CATEGORIES.map(c => ({
@@ -33,7 +36,6 @@ const defaultBudgets: Budget[] = CATEGORIES.map(c => ({
   limit: 500,
 }));
 
-// Pega o userId logado direto do Supabase Auth
 async function getCurrentUserId(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
   return data.session?.user?.id ?? null;
@@ -80,13 +82,20 @@ export function useFinance(selectedMonth?: number) {
         if (expRes.data) {
           setExpenses(
             expRes.data.map(e => ({
-              id:             e.id,
-              description:    e.description,
-              category:       e.category,
-              amount:         Number(e.amount),
-              date:           e.date,
-              attachment:     e.attachment ?? undefined,
-              attachmentName: e.attachment_name ?? undefined,
+              id:                e.id,
+              description:       e.description,
+              category:          e.category,
+              amount:            Number(e.amount),
+              date:              e.date,
+              attachment:        e.attachment ?? undefined,
+              attachmentName:    e.attachment_name ?? undefined,
+              cardName:          e.card_name ?? undefined,
+              installments:      e.installments ?? undefined,
+              installmentNumber: e.installment_number ?? undefined,
+              // ✅ Campos de status e vencimento
+              status:            e.status ?? "pending",
+              due_date:          e.due_date ?? null,
+              paid_at:           e.paid_at ?? null,
             }))
           );
         }
@@ -101,6 +110,10 @@ export function useFinance(selectedMonth?: number) {
               date:           e.date,
               attachment:     e.attachment ?? undefined,
               attachmentName: e.attachment_name ?? undefined,
+              // ✅ Campos de status e vencimento
+              status:         e.status ?? "pending",
+              due_date:       e.due_date ?? null,
+              paid_at:        e.paid_at ?? null,
             }))
           );
         }
@@ -223,8 +236,13 @@ export function useFinance(selectedMonth?: number) {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
+  // ✅ CORRIGIDO — agora aceita e persiste due_date
   const addExpense = useCallback(async (form: {
-    description: string; category: string; amount: string; date: string;
+    description: string;
+    category: string;
+    amount: string;
+    date: string;
+    due_date?: string | null;
   }) => {
     if (!userId || !form.description || !form.amount || isNaN(parseFloat(form.amount)))
       return false;
@@ -237,14 +255,21 @@ export function useFinance(selectedMonth?: number) {
       category:    form.category,
       amount:      parseFloat(form.amount),
       date:        form.date,
+      due_date:    form.due_date ?? null,  // ✅ persiste no banco
     };
 
     const { error } = await supabase.from("expenses").insert(row);
     if (error) { console.error(error); return false; }
 
     setExpenses(prev => [...prev, {
-      id: newId, description: form.description,
-      category: form.category, amount: parseFloat(form.amount), date: form.date,
+      id:          newId,
+      description: form.description,
+      category:    form.category,
+      amount:      parseFloat(form.amount),
+      date:        form.date,
+      due_date:    form.due_date ?? null,  // ✅ atualiza estado local
+      status:      "pending",
+      paid_at:     null,
     }]);
     return true;
   }, [userId]);
@@ -254,12 +279,14 @@ export function useFinance(selectedMonth?: number) {
     setExpenses(prev => prev.filter(e => e.id !== id));
   }, [userId]);
 
+  // ✅ CORRIGIDO — agora persiste due_date no update
   const updateExpense = useCallback(async (updated: Expense) => {
     await supabase.from("expenses").update({
       description:     updated.description,
       category:        updated.category,
       amount:          updated.amount,
       date:            updated.date,
+      due_date:        updated.due_date ?? null,   // ✅ persiste no banco
       attachment:      updated.attachment ?? null,
       attachment_name: updated.attachmentName ?? null,
     }).eq("id", updated.id).eq("user_id", userId);
@@ -305,6 +332,46 @@ export function useFinance(selectedMonth?: number) {
     setIncomeEntries(prev => prev.map(e => e.id === updated.id ? updated : e));
   }, [userId]);
 
+  // ✅ markAsPaid — marca despesa ou receita como paga/pendente
+  const markAsPaid = useCallback(async (
+    type: "expense" | "income",
+    id: number,
+    paid: boolean
+  ) => {
+    const paidAt    = paid ? new Date().toISOString().split("T")[0] : null;
+    const newStatus = paid ? "paid" : "pending";
+
+    if (type === "expense") {
+      const { error } = await supabase
+        .from("expenses")
+        .update({ status: newStatus, paid_at: paidAt })
+        .eq("id", id)
+        .eq("user_id", userId);
+
+      if (!error) {
+        setExpenses(prev =>
+          prev.map(e =>
+            e.id === id ? { ...e, status: newStatus, paid_at: paidAt } : e
+          )
+        );
+      }
+    } else {
+      const { error } = await supabase
+        .from("incomes")
+        .update({ status: newStatus, paid_at: paidAt })
+        .eq("id", id)
+        .eq("user_id", userId);
+
+      if (!error) {
+        setIncomeEntries(prev =>
+          prev.map(e =>
+            e.id === id ? { ...e, status: newStatus, paid_at: paidAt } : e
+          )
+        );
+      }
+    }
+  }, [userId]);
+
   const updateBudget = useCallback(async (category: string, limit: number) => {
     await supabase.from("budgets")
       .upsert({ user_id: userId, category, limit }, { onConflict: "user_id,category" });
@@ -342,5 +409,6 @@ export function useFinance(selectedMonth?: number) {
     tip,
     CATEGORIES,
     MONTHS,
+    markAsPaid,  // ✅
   };
 }

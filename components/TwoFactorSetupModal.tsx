@@ -1,4 +1,4 @@
-// @/components/TwoFactorSetupModal.tsx
+﻿// @/components/TwoFactorSetupModal.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -34,7 +34,6 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
-      // Fallback para dispositivos que bloqueiam clipboard
       const el = document.createElement("textarea");
       el.value = secret;
       el.style.position = "fixed";
@@ -78,7 +77,6 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
       <Card className="bg-[#0d0d1a] border-white/[0.07] w-full max-w-[420px] overflow-hidden">
         <CardContent className="p-6">
 
-          {/* Header */}
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/20 flex items-center justify-center flex-shrink-0">
               <ShieldCheck className="w-5 h-5 text-orange-500" />
@@ -93,7 +91,6 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
             </div>
           </div>
 
-          {/* Passos */}
           <div className="space-y-1.5 mb-5">
             {[
               "Abra o Google Authenticator no seu celular",
@@ -110,7 +107,6 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
             ))}
           </div>
 
-          {/* QR Code */}
           <div className="flex justify-center mb-5">
             <div className="bg-white rounded-2xl p-3 inline-block shadow-xl">
               {qrLoading ? (
@@ -128,7 +124,6 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
             </div>
           </div>
 
-          {/* Secret manual + botão copiar */}
           <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 mb-2">
             <p className="text-[#666] text-[11px] uppercase tracking-wider mb-2">
               Código para inserir manualmente:
@@ -152,7 +147,6 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
             </button>
           </div>
 
-          {/* Dica para usuários mobile */}
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3 mb-5 flex items-start gap-2">
             <span className="text-blue-400 text-base leading-none mt-0.5">💡</span>
             <p className="text-blue-300 text-xs m-0">
@@ -163,7 +157,6 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
             </p>
           </div>
 
-          {/* Erro */}
           {error && (
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
@@ -171,7 +164,6 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
             </div>
           )}
 
-          {/* Input do código */}
           <form onSubmit={handleVerify} className="space-y-3">
             <div>
               <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
@@ -197,10 +189,7 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
               disabled={loading || code.length !== 6}
               className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl py-3 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 disabled:opacity-50"
             >
-              {loading
-                ? <Loader className="w-4 h-4 animate-spin" />
-                : <ShieldCheck className="w-4 h-4" />
-              }
+              {loading ? <Loader className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
               {loading ? "Verificando..." : "Verificar e Concluir Cadastro"}
             </button>
           </form>
