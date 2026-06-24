@@ -47,8 +47,8 @@ export async function getEmailByUsername(username: string) {
     .from("users")
     .select("email")
     .eq("username", username)
-    .maybeSingle(); // ✅ corrigido — era a causa do erro 406 no login
-  if (error) throw error;
+    .maybeSingle();
+  if (error) return null;  // ← retorna null em vez de lançar
   return data?.email ?? null;
 }
 
