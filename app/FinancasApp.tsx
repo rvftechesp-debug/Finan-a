@@ -396,7 +396,7 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
       }
 
       // 2. Valida o código TOTP antes de qualquer ação
-      const valid = verifyTotpCode(profileRow.totp_secret, forgotTotpCode);
+      import { generateTotpSecret, verifyTotpCode } from "@/lib/totp";
       if (!valid) {
         setForgotError("Código 2FA inválido ou expirado. Tente novamente.");
         return;
