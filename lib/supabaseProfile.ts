@@ -7,7 +7,7 @@ export type Profile = {
   name: string;
   email: string;
   username?: string;
-  phone?: string;
+  photo?: string | null;
   full_name?: string;
   avatar_url?: string;
   created_at?: string;
