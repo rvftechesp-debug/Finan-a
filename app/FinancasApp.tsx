@@ -1275,7 +1275,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center overflow-hidden flex-shrink-0">
               {userPhoto
                 // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={String(userPhoto)} alt="Perfil"
+                ? <img src={String(userPhoto)} alt="Perfil" className="w-full h-full object-cover" />
                 : <User className="w-8 h-8 text-white" />}
             </div>
             <div>
