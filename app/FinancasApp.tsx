@@ -715,7 +715,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const clearMessages = () => { setError(''); setSuccess('') }
-  const [photoPreview, setPhotoPreview] = useState<string>(user.photo || '')
+  const [photoPreview, setPhotoPreview] = useState<string>(user.photo as string || '')
   useEffect(() => { setPhotoPreview(user.photo || '') }, [user.photo])
 
   const {
