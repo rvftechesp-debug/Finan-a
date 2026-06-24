@@ -23,7 +23,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Perfil não encontrado" }, { status: 404 });
     }
 
-    const valid = verifyTotp(profile.totp_secret, totpCode);
+    const valid = verifyTotpCode(profile.totp_secret, totpCode);
     if (!valid) {
       return NextResponse.json({ error: "Código 2FA inválido" }, { status: 401 });
     }
