@@ -6,15 +6,11 @@ export type Profile = {
   id: string;
   name: string;
   email: string;
-  username?: string;
-  photo?: string | null;
-  full_name?: string;
-  avatar_url?: string;
-  created_at?: string;
-  updated_at?: string;
-  [key: string]: unknown;
+  phone: string;
+  username: string;
+  photo: string;
+  totp_secret: string | null;
 };
-
 export async function getProfile(userId: string) {
   const { data, error } = await supabase
     .from("users")
