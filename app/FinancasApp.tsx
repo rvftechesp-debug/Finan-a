@@ -23,7 +23,7 @@ import { compressImage } from "@/app/utils/imageCompression";
 import type { Expense } from "@/app/types";
 import { supabase } from "@/lib/supabase";
 import TwoFactorSetupModal from "@/components/TwoFactorSetupModal";
-import { generateTotpSecret, verifyTotp } from "@/lib/totp";
+import { generateTotpSecret, verifyTotpCode } from "@/lib/totp";
 import TwoFactorLoginModal from "@/components/TwoFactorLoginModal";
 import PasskeyLoginModal from "@/components/PasskeyLoginModal";
 import {
