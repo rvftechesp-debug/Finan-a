@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { verifyTotp } from "@/lib/totp";
+import { verifyTotpCode } from "@/lib/totp";
 import { getProfile } from "@/lib/supabaseProfile";
 
 const supabaseAdmin = createClient(
