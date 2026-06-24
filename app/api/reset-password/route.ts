@@ -1,52 +1,40 @@
-import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { verifyTotpCode } from "@/lib/totp";
+import { NextResponse } from "next/server";
+import { verifyTotp } from "@/lib/totp";
+import { getProfile } from "@/lib/supabaseProfile";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, // variável secreta no Vercel
+  { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const { username, newPassword, totpCode } = await req.json();
+    const { userId, newPassword, totpCode } = await req.json();
 
-    if (!username || !newPassword || !totpCode) {
+    if (!userId || !newPassword || !totpCode) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
     }
-    if (newPassword.length < 6) {
-      return NextResponse.json({ error: "Senha muito curta" }, { status: 400 });
-    }
-    if (totpCode.length !== 6) {
-      return NextResponse.json({ error: "Código inválido" }, { status: 400 });
-    }
 
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("users")
-      .select("id, totp_secret")
-      .eq("username", username.trim().toLowerCase())
-      .maybeSingle(); // ✅ corrigido
-
-    if (profileError || !profile) {
-      return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    // Valida TOTP no servidor
+    const profile = await getProfile(userId);
+    if (!profile?.totp_secret) {
+      return NextResponse.json({ error: "Perfil não encontrado" }, { status: 404 });
     }
 
-    if (!profile.totp_secret) {
-      return NextResponse.json({ error: "Usuário sem 2FA configurado" }, { status: 400 });
-    }
-
-    const valid = verifyTotpCode(profile.totp_secret, totpCode.trim());
+    const valid = verifyTotp(profile.totp_secret, totpCode);
     if (!valid) {
-      return NextResponse.json({ error: "Código do autenticador inválido" }, { status: 401 });
+      return NextResponse.json({ error: "Código 2FA inválido" }, { status: 401 });
     }
 
-    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-      profile.id,
-      { password: newPassword.trim() }
-    );
+    // Troca a senha via service_role
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+      password: newPassword,
+    });
 
-    if (updateError) {
-      return NextResponse.json({ error: "Erro ao atualizar senha" }, { status: 500 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });

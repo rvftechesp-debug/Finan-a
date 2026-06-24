@@ -23,7 +23,7 @@ import { compressImage } from "@/app/utils/imageCompression";
 import type { Expense } from "@/app/types";
 import { supabase } from "@/lib/supabase";
 import TwoFactorSetupModal from "@/components/TwoFactorSetupModal";
-import { generateTotpSecret } from "@/lib/totp";
+import { generateTotpSecret, verifyTotp } from "@/lib/totp";
 import TwoFactorLoginModal from "@/components/TwoFactorLoginModal";
 import PasskeyLoginModal from "@/components/PasskeyLoginModal";
 import {
@@ -40,12 +40,10 @@ import type { IncomeEntry } from "@/app/hooks/useFinance";
 import { useAuthMethods } from '@/app/hooks/useAuthMethods';
 import { SecurityMethodCard } from '@/components/SecurityMethodCard';
 import type { AuthMethod } from "@/app/hooks/useAuthMethods";
-// ===================== TIPOS =====================
 
 // ===================== TIPOS =====================
 
-
-
+type User = Profile;
 
 type StatusFilter = "all" | "pending" | "paid";
 type DueDateStatus = "overdue" | "due-today" | "upcoming" | "ok";
@@ -77,10 +75,10 @@ function getDueDateStatus(
 function getDueDateLabel(status: DueDateStatus, dueDate: string): string {
   const due = new Date(dueDate + "T00:00:00");
   const formatted = due.toLocaleDateString("pt-BR");
-  if (status === "overdue") return `?? Vencido ${formatted}`;
-  if (status === "due-today") return `?? Vence hoje`;
-  if (status === "upcoming") return `?? Vence ${formatted}`;
-  return `?? ${formatted}`;
+  if (status === "overdue") return `⚠️ Vencido ${formatted}`;
+  if (status === "due-today") return `🔴 Vence hoje`;
+  if (status === "upcoming") return `⏰ Vence ${formatted}`;
+  return `📅 ${formatted}`;
 }
 
 // ===================== TOOLTIP CUSTOMIZADO =====================
@@ -107,7 +105,7 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
   return null;
 };
 
-// ===================== COMPONENTES REUTILIZï¿½VEIS =====================
+// ===================== COMPONENTES REUTILIZÁVEIS =====================
 
 const TabButton = ({
   active, onClick, icon: Icon, label,
@@ -167,7 +165,6 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
   const [show2FALogin, setShow2FALogin] = useState(false);
   const [pendingLoginProfile, setPendingLoginProfile] = useState<Profile | null>(null);
 
-  // ? Estado dos tokens (declarado aqui, no lugar certo)
   const [pendingTokens, setPendingTokens] = useState<{
     access_token: string;
     refresh_token: string;
@@ -210,7 +207,7 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
 
   const handle2FASuccess = () => {
     setShow2FAModal(false);
-    setSuccess("Conta criada com sucesso! ??");
+    setSuccess("Conta criada com sucesso! 🎉");
     if (pendingProfile) setTimeout(() => onLogin(pendingProfile), 600);
   };
 
@@ -220,13 +217,12 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
     if (pendingLoginProfile) onLogin(pendingLoginProfile);
   };
 
-  // ? Versï¿½o ï¿½nica e correta do cancel
   const handle2FALoginCancel = async () => {
     await supabase.auth.signOut();
     setShow2FALogin(false);
     setPendingLoginProfile(null);
-    setPendingTokens(null); // ? limpa tokens
-    setError("Verificaï¿½ï¿½o 2FA cancelada.");
+    setPendingTokens(null);
+    setError("Verificação 2FA cancelada.");
   };
 
   const handlePasskeyLoginSuccess = () => {
@@ -238,29 +234,29 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
     await supabase.auth.signOut();
     setShowPasskeyLogin(false);
     setPendingLoginProfile(null);
-    setError("Autenticaï¿½ï¿½o cancelada.");
+    setError("Autenticação cancelada.");
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!loginUser.trim() || !loginPass.trim()) {
-      setError("Preencha usuï¿½rio e senha");
+      setError("Preencha usuário e senha");
       return;
     }
     setLoading(true);
     try {
       const realEmail = await getEmailByUsername(loginUser.trim().toLowerCase());
-      if (!realEmail) { setError("Usuï¿½rio nï¿½o encontrado"); return; }
+      if (!realEmail) { setError("Usuário não encontrado"); return; }
 
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: realEmail,
         password: loginPass.trim(),
       });
-      if (authError || !data.user) { setError("Usuï¿½rio ou senha incorretos"); return; }
+      if (authError || !data.user) { setError("Usuário ou senha incorretos"); return; }
 
       const profile = await getProfile(data.user.id);
-      if (!profile) { setError("Perfil nï¿½o encontrado. Contate o suporte."); return; }
+      if (!profile) { setError("Perfil não encontrado. Contate o suporte."); return; }
 
       const { data: authMethods } = await supabase
         .from("user_auth_methods")
@@ -275,7 +271,6 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
       const passkeyAtiva = activeMethods.includes("passkey");
       const biometricAtiva = activeMethods.includes("biometric");
 
-      // ? TOTP: salva tokens e abre modal 2FA
       if (totpAtivo) {
         setPendingLoginProfile(profile);
         setPendingTokens({
@@ -286,14 +281,12 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
         return;
       }
 
-      // ? Passkey / Biometria
       if (passkeyAtiva || biometricAtiva) {
         setPendingLoginProfile(profile);
         setShowPasskeyLogin(true);
         return;
       }
 
-      // ? Sem 2FA ï¿½ login direto
       onLogin(profile);
 
     } catch {
@@ -303,82 +296,143 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
     }
   };
 
-const handleRegister = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError(""); setSuccess("");
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(""); setSuccess("");
 
-  if (!regName.trim())    { setError("Digite seu nome completo"); return; }
-  if (!regPhone.trim())   { setError("Digite seu celular"); return; }
-  if (!regEmail.trim())   { setError("Digite seu e-mail"); return; }
-  if (!regUser.trim())    { setError("Escolha um nome de usuï¿½rio"); return; }
-  if (!regPass.trim())    { setError("Digite uma senha"); return; }
-  if (regPass.length < 6) { setError("A senha deve ter pelo menos 6 caracteres"); return; }
-  if (regPass !== regConfirm) { setError("As senhas nï¿½o conferem"); return; }
+    if (!regName.trim())    { setError("Digite seu nome completo"); return; }
+    if (!regPhone.trim())   { setError("Digite seu celular"); return; }
+    if (!regEmail.trim())   { setError("Digite seu e-mail"); return; }
+    if (!regUser.trim())    { setError("Escolha um nome de usuário"); return; }
+    if (!regPass.trim())    { setError("Digite uma senha"); return; }
+    if (regPass.length < 6) { setError("A senha deve ter pelo menos 6 caracteres"); return; }
+    if (regPass !== regConfirm) { setError("As senhas não conferem"); return; }
 
-  setLoading(true);
-  try {
-    // 1?? Verifica se username jï¿½ existe
-    const emailExistente = await getEmailByUsername(regUser.trim().toLowerCase());
-    if (emailExistente) { setError("Este nome de usuï¿½rio jï¿½ estï¿½ em uso"); return; }
+    setLoading(true);
+    try {
+      const emailExistente = await getEmailByUsername(regUser.trim().toLowerCase());
+      if (emailExistente) { setError("Este nome de usuário já está em uso"); return; }
 
-    // 2?? Cria o usuï¿½rio no Auth
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email: regEmail.trim().toLowerCase(),
-      password: regPass.trim(),
-    });
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: regEmail.trim().toLowerCase(),
+        password: regPass.trim(),
+      });
 
-    if (signUpError || !data.user) {
-      setError(signUpError?.message ?? "Erro ao criar conta. Tente novamente.");
-      return;
+      if (signUpError || !data.user) {
+        setError(signUpError?.message ?? "Erro ao criar conta. Tente novamente.");
+        return;
+      }
+
+      const novoProfile: Profile = {
+        id: data.user.id,
+        name: regName.trim(),
+        phone: regPhone.trim(),
+        username: regUser.trim().toLowerCase(),
+        email: regEmail.trim().toLowerCase(),
+        photo: "",
+        totp_secret: null,
+      };
+
+      const profileCriado = await createProfile(novoProfile.id, {
+        name: novoProfile.name,
+        phone: novoProfile.phone,
+        username: novoProfile.username,
+        email: novoProfile.email,
+        photo: "",
+        totp_secret: null,
+      });
+
+      if (!profileCriado) {
+        setError("Erro ao criar perfil. Tente novamente.");
+        return;
+      }
+
+      const secret = generateTotpSecret();
+      setTotpSecret(secret);
+      setPendingProfile(novoProfile);
+
+      await updateProfile(novoProfile.id, { totp_secret: secret });
+
+      setShow2FAModal(true);
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro inesperado.";
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // 3?? Monta o objeto de perfil
-    const novoProfile: Profile = {
-      id: data.user.id,
-      name: regName.trim(),
-      phone: regPhone.trim(),
-      username: regUser.trim().toLowerCase(),
-      email: regEmail.trim().toLowerCase(),
-      photo: "",
-      totp_secret: null,
-    };
+  // ===================== FORGOT PASSWORD =====================
 
-    // 4?? Cria na tabela profiles ? AQUI ï¿½ O PONTO CRï¿½TICO
-    const profileCriado = await createProfile(novoProfile.id, {
-      name: novoProfile.name,
-      phone: novoProfile.phone,
-      username: novoProfile.username,
-      email: novoProfile.email,
-      photo: "",
-      totp_secret: null,
-    });
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError("");
+    setForgotSuccess("");
 
-    if (!profileCriado) {
-      // Rollback: deleta o usuï¿½rio do auth se o profile falhou
-      // (precisa do supabaseAdmin para isso)
-      setError("Erro ao criar perfil. Tente novamente.");
-      return;
+    if (!forgotUser.trim())       { setForgotError("Digite seu nome de usuário"); return; }
+    if (!forgotNewPass.trim())    { setForgotError("Digite a nova senha"); return; }
+    if (forgotNewPass.length < 6) { setForgotError("A senha deve ter pelo menos 6 caracteres"); return; }
+    if (forgotNewPass !== forgotConfirmPass) { setForgotError("As senhas não conferem"); return; }
+    if (forgotTotpCode.length !== 6) { setForgotError("Digite o código de 6 dígitos do autenticador"); return; }
+
+    setForgotLoading(true);
+    try {
+      // 1. Busca o profile pelo username diretamente no banco
+      const { data: profileRow, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, totp_secret")
+        .eq("username", forgotUser.trim().toLowerCase())
+        .single();
+
+      if (profileError || !profileRow) {
+        setForgotError("Usuário não encontrado");
+        return;
+      }
+
+      if (!profileRow.totp_secret) {
+        setForgotError("Este usuário não possui autenticador 2FA configurado");
+        return;
+      }
+
+      // 2. Valida o código TOTP antes de qualquer ação
+      const valid = verifyTotp(profileRow.totp_secret, forgotTotpCode);
+      if (!valid) {
+        setForgotError("Código 2FA inválido ou expirado. Tente novamente.");
+        return;
+      }
+
+      // 3. Chama a API Route server-side para trocar a senha com service_role
+      const res = await fetch("/api/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: profileRow.id,
+          newPassword: forgotNewPass.trim(),
+          totpCode: forgotTotpCode,
+          totpSecret: profileRow.totp_secret,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        setForgotError(json.error ?? "Erro ao redefinir senha. Tente novamente.");
+        return;
+      }
+
+      setForgotStep("success");
+      setForgotSuccess("Senha redefinida com sucesso! Faça login com a nova senha.");
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro inesperado";
+      setForgotError(msg);
+    } finally {
+      setForgotLoading(false);
     }
+  };
 
-    // 5?? Setup 2FA ou login direto
-    const secret = generateTotpSecret();
-    setTotpSecret(secret);
-    setPendingProfile(novoProfile);
-
-    // Salva o secret no profile
-    await updateProfile(novoProfile.id, { totp_secret: secret });
-
-    setShow2FAModal(true);
-
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Erro inesperado.";
-    setError(msg);
-  } finally {
-    setLoading(false);
-  }
-};
-
-    return (
+  return (
     <div className="min-h-screen bg-[#0d0d1a] text-[#f0f0f0] font-sans flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-[420px]">
 
@@ -415,23 +469,23 @@ const handleRegister = async (e: React.FormEvent) => {
                         <p className="text-emerald-400 text-sm m-0">{forgotSuccess}</p>
                       </div>
                       <button onClick={resetForgot} className="bg-white/5 border border-white/10 text-[#ccc] hover:text-white font-bold rounded-xl py-3 text-sm hover:bg-white/10 transition-all w-full cursor-pointer flex items-center justify-center gap-2">
-                        ? Voltar ao Login
+                        ← Voltar ao Login
                       </button>
                     </div>
                   ) : (
                     <form onSubmit={handleForgotPassword} className="space-y-4">
                       <div>
-                        <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Nome de Usuï¿½rio</label>
+                        <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Nome de Usuário</label>
                         <div className="relative">
                           <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                          <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" placeholder="Digite seu usuï¿½rio" value={forgotUser} onChange={e => setForgotUser(e.target.value)} autoFocus />
+                          <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" placeholder="Digite seu usuário" value={forgotUser} onChange={e => setForgotUser(e.target.value)} autoFocus />
                         </div>
                       </div>
                       <div>
                         <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Nova Senha</label>
                         <div className="relative">
                           <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                          <input type={forgotShowNew ? "text" : "password"} placeholder="Mï¿½nimo 6 caracteres" value={forgotNewPass} onChange={e => setForgotNewPass(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" />
+                          <input type={forgotShowNew ? "text" : "password"} placeholder="Mínimo 6 caracteres" value={forgotNewPass} onChange={e => setForgotNewPass(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" />
                           <button type="button" onClick={() => setForgotShowNew(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer transition-colors">
                             {forgotShowNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
@@ -448,12 +502,12 @@ const handleRegister = async (e: React.FormEvent) => {
                         </div>
                       </div>
                       <div>
-                        <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Cï¿½digo do Autenticador (2FA)</label>
+                        <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Código do Autenticador (2FA)</label>
                         <div className="relative">
                           <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                           <input type="text" inputMode="numeric" maxLength={6} placeholder="000000" value={forgotTotpCode} onChange={e => setForgotTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors tracking-[0.3em] font-mono" />
                         </div>
-                        <p className="text-[#555] text-xs mt-1.5">Abra o Google Authenticator e digite o cï¿½digo de 6 dï¿½gitos.</p>
+                        <p className="text-[#555] text-xs mt-1.5">Abra o Google Authenticator e digite o código de 6 dígitos.</p>
                       </div>
                       <button type="submit" disabled={forgotLoading} className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl py-3 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 disabled:opacity-60">
                         {forgotLoading ? <Loader className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
@@ -476,7 +530,7 @@ const handleRegister = async (e: React.FormEvent) => {
           />
         )}
 
-        {/* Modal Login 2FA ï¿½ apenas UMA vez, com tokens */}
+        {/* Modal Login 2FA */}
         {show2FALogin && pendingLoginProfile && pendingTokens && (
           <TwoFactorLoginModal
             access_token={pendingTokens.access_token}
@@ -499,10 +553,10 @@ const handleRegister = async (e: React.FormEvent) => {
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 mb-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="RV Finanï¿½a" className="w-20 h-20 object-contain" />
+            <img src="/logo.png" alt="RV Finanças" className="w-20 h-20 object-contain" />
           </div>
-          <h1 className="text-3xl font-extrabold m-0 bg-gradient-to-br from-orange-500 to-pink-500 bg-clip-text text-transparent">RV Finanï¿½a</h1>
-          <p className="text-[#888] text-sm mt-2">Controle suas finanï¿½as de forma inteligente</p>
+          <h1 className="text-3xl font-extrabold m-0 bg-gradient-to-br from-orange-500 to-pink-500 bg-clip-text text-transparent">RV Finanças</h1>
+          <p className="text-[#888] text-sm mt-2">Controle suas finanças de forma inteligente</p>
         </div>
 
         <Card className="bg-white/[0.03] border-white/[0.07] overflow-hidden">
@@ -537,12 +591,12 @@ const handleRegister = async (e: React.FormEvent) => {
             {mode === "login" ? (
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Usuï¿½rio</label>
+                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Usuário</label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
                     <input
                       className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                      placeholder="Digite seu usuï¿½rio"
+                      placeholder="Digite seu usuário"
                       value={loginUser}
                       onChange={e => setLoginUser(e.target.value)}
                     />
@@ -602,17 +656,17 @@ const handleRegister = async (e: React.FormEvent) => {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Usuï¿½rio</label>
+                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Usuário</label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" placeholder="Escolha um usuï¿½rio" value={regUser} onChange={e => setRegUser(e.target.value)} />
+                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" placeholder="Escolha um usuário" value={regUser} onChange={e => setRegUser(e.target.value)} />
                   </div>
                 </div>
                 <div>
                   <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Senha</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" type="password" placeholder="Mï¿½nimo 6 caracteres" value={regPass} onChange={e => setRegPass(e.target.value)} />
+                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" type="password" placeholder="Mínimo 6 caracteres" value={regPass} onChange={e => setRegPass(e.target.value)} />
                   </div>
                 </div>
                 <div>
@@ -636,8 +690,8 @@ const handleRegister = async (e: React.FormEvent) => {
         </Card>
 
         <p className="text-center text-[#666] text-xs mt-6">
-          ?? Seus dados ficam salvos com seguranï¿½a.{" "}
-          <span className="text-yellow-600">Nï¿½o use senhas importantes aqui.</span>
+          🔒 Seus dados ficam salvos com segurança.{" "}
+          <span className="text-yellow-600">Não use senhas importantes aqui.</span>
         </p>
       </div>
     </div>
@@ -649,7 +703,7 @@ const handleRegister = async (e: React.FormEvent) => {
 type Method = 'totp' | 'biometric' | 'passkey'
 
 function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => void }) {
-  const [tab, setTab] = useState<'foto' | 'email' | 'senha' | 'seguranï¿½a'>('foto')
+  const [tab, setTab] = useState<'foto' | 'email' | 'senha' | 'segurança'>('foto')
   const [newPhone, setNewPhone] = useState('')
   const [phonePass, setPhonePass] = useState('')
   const [currentPass, setCurrentPass] = useState('')
@@ -699,7 +753,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 5 * 1024 * 1024) { setError('Arquivo muito grande (mï¿½ximo 5MB)'); return }
+    if (file.size > 5 * 1024 * 1024) { setError('Arquivo muito grande (máximo 5MB)'); return }
     try {
       setSuccess('Comprimindo imagem...')
       const compressedBase64 = await compressImage(file, { maxWidth: 512, maxHeight: 512, quality: 0.75 })
@@ -722,10 +776,10 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     const { error: authError } = await supabase.auth.signInWithPassword({ email: user.email, password: phonePass.trim() })
     if (authError) { setError('Senha incorreta'); return }
     const phoneDigits = newPhone.replace(/\D/g, '')
-    if (phoneDigits.length < 10 || phoneDigits.length > 11) { setError('Celular invï¿½lido'); return }
-    if (newPhone.trim() === user.phone) { setError('O novo celular ï¿½ igual ao atual'); return }
+    if (phoneDigits.length < 10 || phoneDigits.length > 11) { setError('Celular inválido'); return }
+    if (newPhone.trim() === user.phone) { setError('O novo celular é igual ao atual'); return }
     const taken = await phoneExists(newPhone.trim())
-    if (taken) { setError('Este celular jï¿½ estï¿½ em uso'); return }
+    if (taken) { setError('Este celular já está em uso'); return }
     const ok = await updateProfile(user.id, { phone: newPhone.trim() })
     if (!ok) { setError('Erro ao salvar. Tente novamente.'); return }
     onUpdate({ ...user, phone: newPhone.trim() })
@@ -739,7 +793,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     if (!currentPass.trim()) { setError('Digite a senha atual'); return }
     if (!newPass.trim()) { setError('Digite a nova senha'); return }
     if (newPass.length < 6) { setError('A nova senha deve ter pelo menos 6 caracteres'); return }
-    if (newPass !== confirmPass) { setError('As senhas nï¿½o conferem'); return }
+    if (newPass !== confirmPass) { setError('As senhas não conferem'); return }
     const { error: verifyError } = await supabase.auth.signInWithPassword({ email: user.email, password: currentPass.trim() })
     if (verifyError) { setError('Senha atual incorreta'); return }
     const { error: updateError } = await supabase.auth.updateUser({ password: newPass.trim() })
@@ -766,7 +820,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
       </Card>
 
       <div className="flex gap-2 flex-wrap">
-        {(['foto', 'email', 'senha', 'seguranï¿½a'] as const).map((t) => (
+        {(['foto', 'email', 'senha', 'segurança'] as const).map((t) => (
           <button
             key={t}
             onClick={() => { setTab(t); clearMessages() }}
@@ -779,7 +833,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
             {t === 'foto' && <><User className="w-4 h-4" /> Foto</>}
             {t === 'email' && <><Phone className="w-4 h-4" /> Alterar Celular</>}
             {t === 'senha' && <><KeyRound className="w-4 h-4" /> Alterar Senha</>}
-            {t === 'seguranï¿½a' && <><ShieldCheck className="w-4 h-4" /> Seguranï¿½a</>}
+            {t === 'segurança' && <><ShieldCheck className="w-4 h-4" /> Segurança</>}
           </button>
         ))}
       </div>
@@ -816,7 +870,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                 <Paperclip className="w-4 h-4" /> Escolher Foto
               </span>
             </label>
-            <p className="text-[#666] text-xs text-center">Tamanho mï¿½ximo: 5MB. A imagem serï¿½ comprimida automaticamente.</p>
+            <p className="text-[#666] text-xs text-center">Tamanho máximo: 5MB. A imagem será comprimida automaticamente.</p>
           </CardContent>
         </Card>
       )}
@@ -879,7 +933,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                 <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Nova Senha</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                  <input type={showNew ? 'text' : 'password'} placeholder="Mï¿½nimo 6 caracteres" value={newPass} onChange={e => setNewPass(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" />
+                  <input type={showNew ? 'text' : 'password'} placeholder="Mínimo 6 caracteres" value={newPass} onChange={e => setNewPass(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" />
                   <button type="button" onClick={() => setShowNew(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer">
                     {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -903,14 +957,14 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
         </Card>
       )}
 
-      {tab === 'seguranï¿½a' && (
+      {tab === 'segurança' && (
         <Card className="bg-white/[0.03] border-white/[0.07]">
           <CardHeader className="pb-3">
             <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-orange-500" /> Mï¿½todos de Autenticaï¿½ï¿½o
+              <ShieldCheck className="w-4 h-4 text-orange-500" /> Métodos de Autenticação
             </CardTitle>
             <p className="text-xs text-[#666] mt-1">
-              Escolha como deseja autenticar no login. Pelo menos <strong className="text-orange-400">1 mï¿½todo</strong> deve permanecer ativo.
+              Escolha como deseja autenticar no login. Pelo menos <strong className="text-orange-400">1 método</strong> deve permanecer ativo.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -922,11 +976,11 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                 : 'bg-red-500/10 border-red-500/20 text-red-400'
             }`}>
               {activeCount >= 2 ? (
-                <><CheckCircle2 className="w-3.5 h-3.5" /> {activeCount} mï¿½todos ativos ï¿½ ï¿½tima seguranï¿½a!</>
+                <><CheckCircle2 className="w-3.5 h-3.5" /> {activeCount} métodos ativos — ótima segurança!</>
               ) : activeCount === 1 ? (
-                <><AlertTriangle className="w-3.5 h-3.5" /> Apenas 1 mï¿½todo ativo ï¿½ considere ativar mais.</>
+                <><AlertTriangle className="w-3.5 h-3.5" /> Apenas 1 método ativo — considere ativar mais.</>
               ) : (
-                <><AlertTriangle className="w-3.5 h-3.5" /> Nenhum mï¿½todo ativo ï¿½ ative pelo menos 1.</>
+                <><AlertTriangle className="w-3.5 h-3.5" /> Nenhum método ativo — ative pelo menos 1.</>
               )}
             </div>
 
@@ -939,8 +993,8 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
               <>
                 <SecurityMethodCard
                   icon={ShieldCheck}
-                  title="2FA ï¿½ Autenticador"
-                  description="Cï¿½digo de 6 dï¿½gitos via Google Authenticator ou similar"
+                  title="2FA — Autenticador"
+                  description="Código de 6 dígitos via Google Authenticator ou similar"
                   badge="Recomendado"
                   badgeColor="bg-orange-500/10 border-orange-500/30 text-orange-400"
                   isActive={methods.totp}
@@ -951,7 +1005,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                 <SecurityMethodCard
                   icon={Fingerprint}
                   title="Biometria"
-                  description="Autenticaï¿½ï¿½o por impressï¿½o digital no dispositivo"
+                  description="Autenticação por impressão digital no dispositivo"
                   badge="Dispositivo"
                   badgeColor="bg-blue-500/10 border-blue-500/30 text-blue-400"
                   isActive={methods.biometric}
@@ -975,7 +1029,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
 
             <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 mt-2">
               <p className="text-[#555] text-xs leading-relaxed">
-                ?? Os mï¿½todos marcados ficam disponï¿½veis como opï¿½ï¿½o ao fazer login. O ï¿½ltimo mï¿½todo ativo nï¿½o pode ser desativado para garantir o acesso ï¿½ conta.
+                💡 Os métodos marcados ficam disponíveis como opção ao fazer login. O último método ativo não pode ser desativado para garantir o acesso à conta.
               </p>
             </div>
           </CardContent>
@@ -999,7 +1053,7 @@ function PasswordResetScreen({ user, onSuccess, onCancel }: { user: User; onSucc
     e.preventDefault();
     setError("");
     if (newPass.length < 6) { setError("A senha deve ter pelo menos 6 caracteres"); return; }
-    if (newPass !== confirmPass) { setError("As senhas nï¿½o conferem"); return; }
+    if (newPass !== confirmPass) { setError("As senhas não conferem"); return; }
     setLoading(true);
     const { error: updateError } = await supabase.auth.updateUser({ password: newPass });
     setLoading(false);
@@ -1017,7 +1071,7 @@ function PasswordResetScreen({ user, onSuccess, onCancel }: { user: User; onSucc
             </div>
             <div>
               <h2 className="text-[16px] font-bold text-white m-0">Nova Senha</h2>
-              <p className="text-[#666] text-xs m-0">Olï¿½, {user.name}! Defina sua nova senha.</p>
+              <p className="text-[#666] text-xs m-0">Olá, {user.name}! Defina sua nova senha.</p>
             </div>
           </div>
           {error && (
@@ -1031,7 +1085,7 @@ function PasswordResetScreen({ user, onSuccess, onCancel }: { user: User; onSucc
               <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Nova Senha</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                <input type={showNew ? "text" : "password"} placeholder="Mï¿½nimo 6 caracteres" value={newPass} onChange={e => setNewPass(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" />
+                <input type={showNew ? "text" : "password"} placeholder="Mínimo 6 caracteres" value={newPass} onChange={e => setNewPass(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" />
                 <button type="button" onClick={() => setShowNew(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer">
                   {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -1071,14 +1125,14 @@ interface DashboardScreenProps {
 
 function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProps) {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-  const [activeTab, setActiveTab] = useState<string>("visï¿½o geral");
+  const [activeTab, setActiveTab] = useState<string>("visão geral");
   const [showForm, setShowForm] = useState(false);
   const [editingBudget, setEditingBudget] = useState<string | null>(null);
   const [tempBudget, setTempBudget] = useState<number>(0);
   const [modalAberto, setModalAberto] = useState(false);
   const [valorReceita, setValorReceita] = useState("");
   const [gastoTab, setGastoTab] = useState<"normal" | "cartao">("normal");
-  const [cardForm, setCardForm] = useState({ description: "", amount: "", category: "Alimentaï¿½ï¿½o", date: "", cardName: "", installments: "1" });
+  const [cardForm, setCardForm] = useState({ description: "", amount: "", category: "Alimentação", date: "", cardName: "", installments: "1" });
   const [descReceita, setDescReceita] = useState("");
   const [catReceita, setCatReceita] = useState("salario");
   const [dataReceita, setDataReceita] = useState(() => new Date().toISOString().split("T")[0]);
@@ -1106,7 +1160,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
 
   const [form, setForm] = useState({
     description: "",
-    category: "Alimentaï¿½ï¿½o",
+    category: "Alimentação",
     amount: "",
     date: `${currentYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`,
   });
@@ -1136,7 +1190,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
     const target = attachTarget;
     e.target.value = "";
     if (!file || !target) return;
-    if (file.size > 5 * 1024 * 1024) { alert("Arquivo muito grande (mï¿½ximo 5MB)"); return; }
+    if (file.size > 5 * 1024 * 1024) { alert("Arquivo muito grande (máximo 5MB)"); return; }
     setAttachLoading(true);
     try {
       let dataUrl: string;
@@ -1169,7 +1223,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
     if (await finance.addExpense({ ...form, due_date: formDueDate || null })) {
       setForm({
         description: "",
-        category: "Alimentaï¿½ï¿½o",
+        category: "Alimentação",
         amount: "",
         date: `${currentYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`,
       });
@@ -1203,12 +1257,12 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
   };
 
   const tabs = [
-    { id: "visï¿½o geral",   label: "Visï¿½o Geral",   icon: PieIcon },
+    { id: "visão geral",   label: "Visão Geral",   icon: PieIcon },
     { id: "gastos",        label: "Gastos",         icon: Receipt },
     { id: "investimentos", label: "Investimentos",  icon: TrendingUpIcon },
-    { id: "histï¿½rico",     label: "Histï¿½rico",      icon: BarChart3 },
+    { id: "histórico",     label: "Histórico",      icon: BarChart3 },
     { id: "metas",         label: "Metas",          icon: Target },
-    { id: "relatï¿½rios",    label: "Relatï¿½rios",     icon: TrendingUp },
+    { id: "relatórios",    label: "Relatórios",     icon: TrendingUp },
   ];
 
   return (
@@ -1227,11 +1281,11 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
             <div>
               <h1 className="text-2xl sm:text-[28px] font-extrabold m-0 flex items-center gap-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logo.png" alt="RV Finanï¿½a" className="w-9 h-9 sm:w-10 sm:h-10 object-contain" />
-                <span className="bg-gradient-to-br from-orange-500 to-pink-500 bg-clip-text text-transparent">RV Finanï¿½a</span>
+                <img src="/logo.png" alt="RV Finanças" className="w-9 h-9 sm:w-10 sm:h-10 object-contain" />
+                <span className="bg-gradient-to-br from-orange-500 to-pink-500 bg-clip-text text-transparent">RV Finanças</span>
               </h1>
               <div className="flex items-center gap-2 mt-1 relative" ref={profileMenuRef}>
-                <p className="text-[#888] text-[13px] m-0">Olï¿½, <span className="text-orange-500 font-semibold">{user.name}</span>!</p>
+                <p className="text-[#888] text-[13px] m-0">Olá, <span className="text-orange-500 font-semibold">{user.name}</span>!</p>
                 <button onClick={() => setShowProfileMenu(v => !v)} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.03] text-[#888] hover:text-white hover:bg-white/[0.05] transition-colors text-sm">
                   <User className="w-4 h-4" />
                   <span className="hidden sm:inline">Perfil</span>
@@ -1266,7 +1320,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
         <Card className="bg-white/[0.03] border-white/[0.07] mb-5 p-3">
           <div className="flex items-center gap-2 mb-2">
             <CalendarDays className="w-4 h-4 text-[#888]" />
-            <span className="text-[#888] text-xs uppercase tracking-wider font-medium">Perï¿½odo</span>
+            <span className="text-[#888] text-xs uppercase tracking-wider font-medium">Período</span>
           </div>
           <div className="flex gap-1.5 flex-wrap">
             {MONTHS.map((m, i) => (
@@ -1285,7 +1339,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                 <CardHeader className="pb-0">
                   <div className="flex items-center justify-between mb-3">
                     <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
-                      <Plus className="w-4 h-4 text-orange-500" /> Novo Lanï¿½amento
+                      <Plus className="w-4 h-4 text-orange-500" /> Novo Lançamento
                     </CardTitle>
                     <button onClick={() => setShowForm(false)} className="text-[#888] hover:text-white transition-colors cursor-pointer">
                       <X className="w-4 h-4" />
@@ -1296,7 +1350,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                       <Receipt className="w-3.5 h-3.5" /> Gasto
                     </button>
                     <button onClick={() => setGastoTab("cartao")} className={`flex-1 py-2.5 text-sm font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${gastoTab === "cartao" ? "text-white border-b-2 border-purple-500" : "text-[#888] hover:text-[#ccc]"}`}>
-                      <DollarSign className="w-3.5 h-3.5" /> Cartï¿½o de Crï¿½dito
+                      <DollarSign className="w-3.5 h-3.5" /> Cartão de Crédito
                     </button>
                   </div>
                 </CardHeader>
@@ -1306,7 +1360,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                         <input
                           className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                          placeholder="Descriï¿½ï¿½o do gasto"
+                          placeholder="Descrição do gasto"
                           value={form.description}
                           onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                         />
@@ -1334,7 +1388,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                         />
                         <div className="sm:col-span-2">
                           <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">
-                            ?? Data de Vencimento <span className="normal-case text-[#555]">(opcional)</span>
+                            📅 Data de Vencimento <span className="normal-case text-[#555]">(opcional)</span>
                           </label>
                           <input
                             className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-orange-500 w-full transition-colors"
@@ -1354,13 +1408,13 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   ) : (
                     <>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                        <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#666] transition-colors" placeholder="Descriï¿½ï¿½o (ex: Compra Mercado)" value={cardForm.description} onChange={e => setCardForm(f => ({ ...f, description: e.target.value }))} />
+                        <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#666] transition-colors" placeholder="Descrição (ex: Compra Mercado)" value={cardForm.description} onChange={e => setCardForm(f => ({ ...f, description: e.target.value }))} />
                         <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#666] transition-colors" type="number" placeholder="Valor total (R$)" value={cardForm.amount} onChange={e => setCardForm(f => ({ ...f, amount: e.target.value }))} />
-                        <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#666] transition-colors" placeholder="Nome do cartï¿½o (ex: Nubank)" value={cardForm.cardName} onChange={e => setCardForm(f => ({ ...f, cardName: e.target.value }))} />
+                        <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#666] transition-colors" placeholder="Nome do cartão (ex: Nubank)" value={cardForm.cardName} onChange={e => setCardForm(f => ({ ...f, cardName: e.target.value }))} />
                         <select className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full cursor-pointer transition-colors" value={cardForm.installments} onChange={e => setCardForm(f => ({ ...f, installments: e.target.value }))}>
                           {Array.from({ length: 24 }, (_, i) => i + 1).map(n => (
                             <option key={n} value={String(n)} className="bg-[#1a1a2e]">
-                              {n === 1 ? "ï¿½ vista (1x)" : `${n}x de ${cardForm.amount ? `R$ ${(parseFloat(cardForm.amount) / n).toFixed(2).replace(".", ",")}` : "ï¿½"}`}
+                              {n === 1 ? "À vista (1x)" : `${n}x de ${cardForm.amount ? `R$ ${(parseFloat(cardForm.amount) / n).toFixed(2).replace(".", ",")}` : "–"}`}
                             </option>
                           ))}
                         </select>
@@ -1373,10 +1427,10 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                       </div>
                       {cardForm.amount && parseFloat(cardForm.amount) > 0 && parseInt(cardForm.installments) > 1 && (
                         <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl px-4 py-2.5 mb-3 text-xs text-purple-300">
-                          ?? {parseInt(cardForm.installments)}x de{" "}
+                          💳 {parseInt(cardForm.installments)}x de{" "}
                           <strong>R$ {(parseFloat(cardForm.amount) / parseInt(cardForm.installments)).toFixed(2).replace(".", ",")}</strong>
-                          {" "}ï¿½ Total: <strong>R$ {parseFloat(cardForm.amount).toFixed(2).replace(".", ",")}</strong>
-                          {cardForm.cardName && ` ï¿½ ${cardForm.cardName}`}
+                          {" "}— Total: <strong>R$ {parseFloat(cardForm.amount).toFixed(2).replace(".", ",")}</strong>
+                          {cardForm.cardName && ` — ${cardForm.cardName}`}
                         </div>
                       )}
                       <button
@@ -1395,7 +1449,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                               : `${cardForm.description}${cardForm.cardName ? ` (${cardForm.cardName})` : ""}`;
                             finance.addExpense({ description: desc, category: cardForm.category, amount: String(installmentValue.toFixed(2)), date: dateStr });
                           }
-                          setCardForm({ description: "", amount: "", category: "Alimentaï¿½ï¿½o", date: "", cardName: "", installments: "1" });
+                          setCardForm({ description: "", amount: "", category: "Alimentação", date: "", cardName: "", installments: "1" });
                           setShowForm(false);
                         }}
                       >
@@ -1416,8 +1470,8 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
           ))}
         </div>
 
-        {/* ===== VISï¿½O GERAL ===== */}
-        {activeTab === "visï¿½o geral" && (
+        {/* ===== VISÃO GERAL ===== */}
+        {activeTab === "visão geral" && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <StatCard title="Renda" value={formatBRL(finance.monthlyIncome)} color="#10B981" icon={PiggyBank} editable onEdit={() => setModalAberto(true)} />
@@ -1440,10 +1494,10 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                     : <AlertTriangle className="w-4 h-4 text-yellow-500" />}
                   <p className="text-[#888] text-xs">
                     {finance.savingsRate >= 20
-                      ? "Excelente! Continue assim ï¿½ vocï¿½ estï¿½ economizando bem."
+                      ? "Excelente! Continue assim — você está economizando bem."
                       : finance.savingsRate >= 10
-                        ? "Bom progresso, mas ainda dï¿½ para melhorar."
-                        : "Atenï¿½ï¿½o: seus gastos estï¿½o altos. Tente reduzir."}
+                        ? "Bom progresso, mas ainda dá para melhorar."
+                        : "Atenção: seus gastos estão altos. Tente reduzir."}
                   </p>
                 </div>
               </CardContent>
@@ -1454,11 +1508,11 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                 <CardContent className="p-4 flex items-start gap-3">
                   <Lightbulb className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-yellow-300 font-semibold text-sm mb-1">?? Dica Financeira</p>
+                    <p className="text-yellow-300 font-semibold text-sm mb-1">💡 Dica Financeira</p>
                     <p className="text-[#ccc] text-xs">
-                      Sua maior despesa ï¿½ em <strong>{finance.tip.categoryName}</strong> ({finance.tip.icon}), representando{" "}
+                      Sua maior despesa é em <strong>{finance.tip.categoryName}</strong> ({finance.tip.icon}), representando{" "}
                       <strong>{finance.tip.pct}%</strong> dos gastos. Reduzir 10% economizaria{" "}
-                      <strong>{formatBRL(finance.tip.savings)}</strong> este mï¿½s.
+                      <strong>{formatBRL(finance.tip.savings)}</strong> este mês.
                     </p>
                   </div>
                 </CardContent>
@@ -1504,7 +1558,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   </Card>
                   <Card className="bg-emerald-500/10 border-emerald-500/20">
                     <CardContent className="p-3.5">
-                      <p className="text-xs text-emerald-500 font-semibold mb-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Jï¿½ Pago</p>
+                      <p className="text-xs text-emerald-500 font-semibold mb-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Já Pago</p>
                       <p className="text-lg font-bold text-emerald-400">{formatBRL(totalPaid)}</p>
                     </CardContent>
                   </Card>
@@ -1516,7 +1570,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
               {(["all", "pending", "paid"] as const).map(f => (
                 <button key={f} onClick={() => setStatusFilter(f)}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer border ${statusFilter === f ? "bg-orange-500 border-orange-500 text-white" : "bg-white/[0.03] border-white/10 text-[#888] hover:text-white"}`}>
-                  {f === "all" ? "?? Todos" : f === "pending" ? "? Pendentes" : "? Pagos"}
+                  {f === "all" ? "📋 Todos" : f === "pending" ? "⏳ Pendentes" : "✅ Pagos"}
                 </button>
               ))}
             </div>
@@ -1548,7 +1602,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
                   <Receipt className="w-4 h-4 text-orange-500" />
-                  Lanï¿½amentos ({finance.filtered.length + finance.filteredIncomes.length})
+                  Lançamentos ({finance.filtered.length + finance.filteredIncomes.length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -1565,7 +1619,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   ].sort((a, b) => +new Date(b.date) - +new Date(a.date));
 
                   if (allItems.length === 0)
-                    return <p className="text-[#666] text-[13px] text-center py-4">Nenhum lanï¿½amento encontrado.</p>;
+                    return <p className="text-[#666] text-[13px] text-center py-4">Nenhum lançamento encontrado.</p>;
 
                   return (
                     <div className="space-y-0">
@@ -1584,7 +1638,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                                     className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500 placeholder:text-[#666]"
                                     value={editingExpense.description}
                                     onChange={ev => setEditingExpense({ ...editingExpense, description: ev.target.value })}
-                                    placeholder="Descriï¿½ï¿½o"
+                                    placeholder="Descrição"
                                   />
                                   <input
                                     type="number"
@@ -1626,12 +1680,12 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                                     <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
                                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                       <p className="text-[#888] text-[11px] m-0">
-                                        {e.category} ï¿½ {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                                        {e.category} — {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
                                       </p>
                                       {e.status === "paid" ? (
                                         <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-semibold">
                                           <CheckCircle2 className="w-2.5 h-2.5" />
-                                          Pago{e.paid_at && ` ï¿½ ${new Date(e.paid_at + "T00:00:00").toLocaleDateString("pt-BR")}`}
+                                          Pago{e.paid_at && ` — ${new Date(e.paid_at + "T00:00:00").toLocaleDateString("pt-BR")}`}
                                         </span>
                                       ) : (
                                         <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 font-semibold">
@@ -1681,14 +1735,14 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                             <div key={`inc-${e.id}`} className="py-3.5 border-b border-white/[0.03] last:border-b-0">
                               {isEditing && editingIncome ? (
                                 <div className="grid grid-cols-2 gap-2">
-                                  <input className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500 placeholder:text-[#666]" value={editingIncome.description} onChange={ev => setEditingIncome({ ...editingIncome, description: ev.target.value })} placeholder="Descriï¿½ï¿½o" />
+                                  <input className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500 placeholder:text-[#666]" value={editingIncome.description} onChange={ev => setEditingIncome({ ...editingIncome, description: ev.target.value })} placeholder="Descrição" />
                                   <input type="number" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.amount} onChange={ev => setEditingIncome({ ...editingIncome, amount: parseFloat(ev.target.value) || 0 })} />
                                   <input type="date" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.date} onChange={ev => setEditingIncome({ ...editingIncome, date: ev.target.value })} />
                                   <select className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.type} onChange={ev => setEditingIncome({ ...editingIncome, type: ev.target.value })}>
-                                    <option value="salario" className="bg-[#1a1a2e]">?? Salï¿½rio</option>
-                                    <option value="freelance" className="bg-[#1a1a2e]">?? Freelance</option>
-                                    <option value="investimento" className="bg-[#1a1a2e]">?? Investimento</option>
-                                    <option value="outro" className="bg-[#1a1a2e]">?? Outro</option>
+                                    <option value="salario" className="bg-[#1a1a2e]">💼 Salário</option>
+                                    <option value="freelance" className="bg-[#1a1a2e]">💻 Freelance</option>
+                                    <option value="investimento" className="bg-[#1a1a2e]">📈 Investimento</option>
+                                    <option value="outro" className="bg-[#1a1a2e]">💰 Outro</option>
                                   </select>
                                   <button onClick={() => { finance.updateIncome(editingIncome); setEditingIncome(null); }} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all">
                                     <Check className="w-3 h-3" /> Salvar
@@ -1699,12 +1753,12 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-3">
-                                  <span className="text-xl">??</span>
+                                  <span className="text-xl">💰</span>
                                   <div className="flex-1 min-w-0">
                                     <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
                                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                       <p className="text-[#888] text-[11px] m-0">
-                                        Receita ï¿½ {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                                        Receita — {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
                                       </p>
                                       {e.status === "paid" ? (
                                         <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-semibold">
@@ -1744,13 +1798,13 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
           </div>
         )}
 
-        {/* ===== HISTï¿½RICO ===== */}
-        {activeTab === "histï¿½rico" && (
+        {/* ===== HISTÓRICO ===== */}
+        {activeTab === "histórico" && (
           <div className="space-y-4">
             <Card className="bg-white/[0.03] border-white/[0.07]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-orange-500" /> Evoluï¿½ï¿½o Mensal de Gastos
+                  <BarChart3 className="w-4 h-4 text-orange-500" /> Evolução Mensal de Gastos
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -1765,13 +1819,13 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-                <p className="text-center text-[#666] text-xs mt-3">O mï¿½s atual ({MONTHS[selectedMonth]}) estï¿½ destacado em rosa</p>
+                <p className="text-center text-[#666] text-xs mt-3">O mês atual ({MONTHS[selectedMonth]}) está destacado em rosa</p>
               </CardContent>
             </Card>
             <Card className="bg-white/[0.03] border-white/[0.07]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-orange-500" /> Tendï¿½ncia de Gastos
+                  <TrendingUp className="w-4 h-4 text-orange-500" /> Tendência de Gastos
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -1850,8 +1904,8 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
           </div>
         )}
 
-        {/* ===== RELATï¿½RIOS ===== */}
-        {activeTab === "relatï¿½rios" && (
+        {/* ===== RELATÓRIOS ===== */}
+        {activeTab === "relatórios" && (
           <div className="space-y-4">
             <Card className="bg-white/[0.03] border-white/[0.07]">
               <CardHeader className="pb-2">
@@ -1878,7 +1932,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
               <Card className="bg-white/[0.03] border-white/[0.07]">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                    <PieIcon className="w-4 h-4 text-orange-500" /> Distribuiï¿½ï¿½o de Gastos
+                    <PieIcon className="w-4 h-4 text-orange-500" /> Distribuição de Gastos
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -1904,7 +1958,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
               </Card>
               <Card className="bg-white/[0.03] border-white/[0.07]">
                 <CardContent className="p-4">
-                  <p className="text-[#888] text-[11px] uppercase tracking-wider m-0">Mï¿½dia Mensal</p>
+                  <p className="text-[#888] text-[11px] uppercase tracking-wider m-0">Média Mensal</p>
                   <p className="text-[#ccc] font-bold text-lg m-0 mt-1">{formatBRL(finance.monthlyData.reduce((s, m) => s + m.total, 0) / 12)}</p>
                 </CardContent>
               </Card>
@@ -1932,7 +1986,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                 <RadarIcon className="w-4 h-4" /> Radar de Mercado
               </button>
               <button onClick={() => setInvestTab("analise")} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${investTab === "analise" ? "bg-gradient-to-br from-purple-600 to-blue-500 text-white shadow-lg" : "text-[#888] hover:text-white"}`}>
-                <Zap className="w-4 h-4" /> Anï¿½lise IA
+                <Zap className="w-4 h-4" /> Análise IA
               </button>
             </div>
 
@@ -1943,9 +1997,9 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                 <Card className="bg-gradient-to-br from-purple-500/10 to-blue-500/10 border-purple-500/20">
                   <CardContent className="p-4 sm:p-5">
                     <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
-                      <TrendingUpIcon className="w-4 h-4 text-purple-400" /> Anï¿½lise de Investimentos com IA
+                      <TrendingUpIcon className="w-4 h-4 text-purple-400" /> Análise de Investimentos com IA
                     </h3>
-                    <p className="text-[#888] text-xs mb-4">Informe o valor disponï¿½vel e receba recomendaï¿½ï¿½es personalizadas.</p>
+                    <p className="text-[#888] text-xs mb-4">Informe o valor disponível e receba recomendações personalizadas.</p>
                     <div className="flex gap-2">
                       <input type="number" placeholder="Valor para investir (R$)" value={investmentValue} onChange={e => setInvestmentValue(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 flex-1 placeholder:text-[#666] transition-colors" />
                       <button onClick={() => { const val = parseFloat(investmentValue); if (!isNaN(val) && val > 0) investments.analyze(val); }} disabled={investments.analyzing} className="bg-gradient-to-br from-purple-600 to-blue-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity cursor-pointer flex items-center gap-2 shadow-lg shadow-purple-500/20 disabled:opacity-60 whitespace-nowrap">
@@ -1965,10 +2019,10 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4 text-purple-400" /> Anï¿½lises Recentes
+                        <BarChart3 className="w-4 h-4 text-purple-400" /> Análises Recentes
                       </h3>
                       <button onClick={investments.clearHistory} className="text-xs text-[#888] hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer">
-                        <Trash2 className="w-3 h-3" /> Limpar histï¿½rico
+                        <Trash2 className="w-3 h-3" /> Limpar histórico
                       </button>
                     </div>
                     {investments.analyses.map(analysis => (
@@ -1996,7 +2050,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                                   <span className="text-xs flex items-center gap-1.5 font-medium text-[#ccc]">
                                     <span>{opt.icon}</span>
                                     {opt.label}
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${opt.risk === "baixo" ? "bg-emerald-500/20 text-emerald-400" : opt.risk === "mï¿½dio" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}>
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${opt.risk === "baixo" ? "bg-emerald-500/20 text-emerald-400" : opt.risk === "médio" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}>
                                       {opt.risk}
                                     </span>
                                   </span>
@@ -2024,7 +2078,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                               <div className="bg-white/[0.03] rounded-lg px-3 py-2">
                                 <p className="text-[#888] text-[10px] uppercase tracking-wider">Sentimento</p>
                                 <p className={`font-bold text-xs mt-0.5 ${analysis.marketContext.sentiment === "bullish" ? "text-emerald-400" : analysis.marketContext.sentiment === "bearish" ? "text-red-400" : "text-yellow-400"}`}>
-                                  {analysis.marketContext.sentiment === "bullish" ? "?? Otimista" : analysis.marketContext.sentiment === "bearish" ? "?? Pessimista" : "?? Neutro"}
+                                  {analysis.marketContext.sentiment === "bullish" ? "🚀 Otimista" : analysis.marketContext.sentiment === "bearish" ? "🐻 Pessimista" : "⚖️ Neutro"}
                                 </p>
                               </div>
                             </div>
@@ -2039,7 +2093,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                   <Card className="bg-white/[0.03] border-white/[0.07]">
                     <CardContent className="p-8 flex flex-col items-center text-center gap-3">
                       <TrendingUpIcon className="w-10 h-10 text-purple-400/40" />
-                      <p className="text-[#888] text-sm">Nenhuma anï¿½lise ainda. Informe um valor acima para comeï¿½ar.</p>
+                      <p className="text-[#888] text-sm">Nenhuma análise ainda. Informe um valor acima para começar.</p>
                     </CardContent>
                   </Card>
                 )}
@@ -2072,13 +2126,13 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                  <input type="text" placeholder="Descriï¿½ï¿½o da receita" value={descReceita} onChange={e => setDescReceita(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full placeholder:text-[#666] transition-colors" />
+                  <input type="text" placeholder="Descrição da receita" value={descReceita} onChange={e => setDescReceita(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full placeholder:text-[#666] transition-colors" />
                   <input type="number" step="0.01" placeholder="Valor (R$)" value={valorReceita} onChange={e => setValorReceita(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full placeholder:text-[#666] transition-colors" />
                   <select value={catReceita} onChange={e => setCatReceita(e.target.value)} className="bg-[#1a1a2e] border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full cursor-pointer transition-colors">
-                    <option value="salario" className="bg-[#1a1a2e]">?? Salï¿½rio</option>
-                    <option value="freelance" className="bg-[#1a1a2e]">?? Freelance</option>
-                    <option value="investimento" className="bg-[#1a1a2e]">?? Investimento</option>
-                    <option value="outro" className="bg-[#1a1a2e]">?? Outro</option>
+                    <option value="salario" className="bg-[#1a1a2e]">💼 Salário</option>
+                    <option value="freelance" className="bg-[#1a1a2e]">💻 Freelance</option>
+                    <option value="investimento" className="bg-[#1a1a2e]">📈 Investimento</option>
+                    <option value="outro" className="bg-[#1a1a2e]">💰 Outro</option>
                   </select>
                   <input type="date" value={dataReceita} onChange={e => setDataReceita(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full transition-colors" />
                 </div>
@@ -2150,20 +2204,20 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                     </select>
                     <select value={extratoFiltroTipo} onChange={e => setExtratoFiltroTipo(e.target.value as "ambos" | "gastos" | "receitas")} className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-2.5 py-2 text-xs outline-none focus:border-orange-500 cursor-pointer">
                       <option value="ambos" className="bg-[#0b0b14]">Gastos e Receitas</option>
-                      <option value="gastos" className="bg-[#0b0b14]">Sï¿½ Gastos</option>
-                      <option value="receitas" className="bg-[#0b0b14]">Sï¿½ Receitas</option>
+                      <option value="gastos" className="bg-[#0b0b14]">Só Gastos</option>
+                      <option value="receitas" className="bg-[#0b0b14]">Só Receitas</option>
                     </select>
                   </div>
                 </CardHeader>
                 <CardContent className="overflow-y-auto flex-1 px-4 py-2">
                   {allItems.length === 0 ? (
-                    <p className="text-[#666] text-sm text-center py-6">Nenhum lanï¿½amento encontrado.</p>
+                    <p className="text-[#666] text-sm text-center py-6">Nenhum lançamento encontrado.</p>
                   ) : (
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-[#888] text-xs border-b border-white/[0.05]">
                           <th className="text-left py-2 font-medium">Data</th>
-                          <th className="text-left py-2 font-medium">Descriï¿½ï¿½o</th>
+                          <th className="text-left py-2 font-medium">Descrição</th>
                           <th className="text-left py-2 font-medium hidden sm:table-cell">Categoria</th>
                           <th className="text-left py-2 font-medium">Tipo</th>
                           <th className="text-right py-2 font-medium">Valor</th>
@@ -2219,7 +2273,6 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
 
 // ===================== MAIN APP =====================
 
-
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2233,7 +2286,6 @@ export default function App() {
   const [resetSessionProfile, setResetSessionProfile] = useState<User | null>(null);
   const initialCheckDone = useRef(false);
 
-  // -- useEffect 1: verifica sessï¿½o inicial --
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
@@ -2256,7 +2308,6 @@ export default function App() {
     });
   }, []);
 
-  // -- useEffect 2: escuta mudanï¿½as de auth --
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!initialCheckDone.current && event === "SIGNED_IN") return;
@@ -2292,7 +2343,7 @@ export default function App() {
       <div className="min-h-screen bg-[#0d0d1a] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="RV Finanï¿½a" className="w-16 h-16 object-contain animate-pulse" />
+          <img src="/logo.png" alt="RV Finanças" className="w-16 h-16 object-contain animate-pulse" />
           <Loader className="w-6 h-6 text-orange-500 animate-spin" />
         </div>
       </div>
