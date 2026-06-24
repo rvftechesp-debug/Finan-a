@@ -525,7 +525,7 @@ if (!valid) {
         {show2FAModal && totpSecret && pendingProfile && (
           <TwoFactorSetupModal
             secret={totpSecret}
-            username={pendingProfile.username}
+            username={pendingProfile.username ?? ""}
             onSuccess={handle2FASuccess}
           />
         )}
