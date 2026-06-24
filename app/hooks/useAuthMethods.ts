@@ -45,7 +45,8 @@ export function useAuthMethods(userId: string | null): UseAuthMethodsReturn {
     if (!error && data) {
       const map: AuthMethods = { totp: false, biometric: false, passkey: false }
       data.forEach((row: { method: AuthMethod; is_active: boolean }) => {
-        if (row.is_active) map[row.method] = true
+        // ✅ mapeia independente de is_active ser true ou false
+        map[row.method] = row.is_active ?? false
       })
       setMethods(map)
     }
@@ -63,53 +64,54 @@ export function useAuthMethods(userId: string | null): UseAuthMethodsReturn {
 
   const isDisabled = useCallback(
     (method: AuthMethod): boolean => {
-      return methods[method] && totalAtivos === 1
+      return methods[method] === true && totalAtivos === 1
     },
     [methods, totalAtivos]
   )
 
-const toggle = useCallback(
-  async (method: AuthMethod, active: boolean): Promise<string | null> => {
-    if (!userId) return 'Usuário não autenticado'
+  const toggle = useCallback(
+    async (method: AuthMethod, active: boolean): Promise<string | null> => {
+      if (!userId) return 'Usuário não autenticado'
 
-    if (!active && totalAtivos === 1 && methods[method]) {
-      return 'Mantenha pelo menos 1 método ativo para garantir o acesso à conta.'
-    }
+      if (!active && totalAtivos === 1 && methods[method]) {
+        return 'Mantenha pelo menos 1 método ativo para garantir o acesso à conta.'
+      }
 
-    setToggling(method)
+      setToggling(method)
 
-    try {
-const { error } = await supabase
-  .from('user_auth_methods')
-  .upsert(
-    {
-      user_id: userId,
-      method,
-      is_active: active,
-      updated_at: new Date().toISOString(),
+      try {
+        const { error } = await supabase
+          .from('user_auth_methods')
+          .upsert(
+            {
+              user_id: userId,
+              method,
+              is_active: active,
+              updated_at: new Date().toISOString(),
+            },
+            {
+              onConflict: 'user_id,method',
+              ignoreDuplicates: false,
+            }
+          )
+
+        if (error) {
+          console.error('Erro upsert:', error.message, error.details, error.hint)
+          return 'Erro ao salvar. Tente novamente.'
+        }
+
+        // ✅ só atualiza estado após confirmar sucesso no banco
+        setMethods(prev => ({ ...prev, [method]: active }))
+        return null
+      } catch (err) {
+        console.error('Erro inesperado:', err)
+        return 'Erro inesperado. Tente novamente.'
+      } finally {
+        setToggling(null)
+      }
     },
-    { 
-      onConflict: 'user_id,method',
-      ignoreDuplicates: false  // garante que UPDATE acontece
-    }
+    [userId, methods, totalAtivos]
   )
-
-if (error) {
-  console.error('Erro upsert:', error.message, error.details, error.hint)
- }
-
-
-      setMethods(prev => ({ ...prev, [method]: active }))
-      return null
-    } catch (err) {
-      console.error('Erro inesperado:', err)
-      return 'Erro inesperado. Tente novamente.'
-    } finally {
-      setToggling(null)
-    }
-  },
-  [userId, methods, totalAtivos]
-)
 
   return {
     methods,

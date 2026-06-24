@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { verifyTotpCode } from "@/lib/totp"; // sua função existente
+import { verifyTotpCode } from "@/lib/totp";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!, // service role — nunca expor no client
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 export async function POST(req: NextRequest) {
   try {
     const { username, newPassword, totpCode } = await req.json();
 
-    // Validações básicas
     if (!username || !newPassword || !totpCode) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
     }
@@ -22,31 +21,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Código inválido" }, { status: 400 });
     }
 
-    // 1. Busca o perfil pelo username (server-side, seguro)
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("users")
       .select("id, totp_secret")
       .eq("username", username.trim().toLowerCase())
-      .single();
+      .maybeSingle(); // ✅ corrigido
 
     if (profileError || !profile) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
     }
 
     if (!profile.totp_secret) {
-      return NextResponse.json(
-        { error: "Usuário sem 2FA configurado" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Usuário sem 2FA configurado" }, { status: 400 });
     }
 
-    // 2. Valida o TOTP no servidor (secret nunca sai daqui)
     const valid = verifyTotpCode(profile.totp_secret, totpCode.trim());
     if (!valid) {
       return NextResponse.json({ error: "Código do autenticador inválido" }, { status: 401 });
     }
 
-    // 3. Atualiza a senha via Admin (sem precisar de sessão)
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
       profile.id,
       { password: newPassword.trim() }

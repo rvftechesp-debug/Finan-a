@@ -5,6 +5,7 @@ import { Loader } from 'lucide-react'
 import { ShieldCheck, Fingerprint, ScanFace, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useAuthMethods } from '@/app/hooks/useAuthMethods'
 import { SecurityMethodCard } from '@/components/SecurityMethodCard'
+import { useEffect, useState } from 'react'
 
 type Method = 'totp' | 'biometric' | 'passkey'
 
@@ -15,6 +16,7 @@ const METODOS: {
   description: string
   badge: string
   badgeColor: string
+  mobileOnly?: boolean  // 👈 nova propriedade
 }[] = [
   {
     key: 'totp',
@@ -23,6 +25,7 @@ const METODOS: {
     description: 'Código de 6 dígitos via Google Authenticator ou similar',
     badge: 'Recomendado',
     badgeColor: 'bg-orange-500/10 border-orange-500/30 text-orange-400',
+    mobileOnly: false, // disponível em todos
   },
   {
     key: 'biometric',
@@ -31,6 +34,7 @@ const METODOS: {
     description: 'Autenticação por impressão digital no dispositivo',
     badge: 'Dispositivo',
     badgeColor: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
+    mobileOnly: true, // 📱 apenas mobile
   },
   {
     key: 'passkey',
@@ -39,8 +43,22 @@ const METODOS: {
     description: 'Reconhecimento facial ou chave de acesso do dispositivo',
     badge: 'Passkey',
     badgeColor: 'bg-purple-500/10 border-purple-500/30 text-purple-400',
+    mobileOnly: true, // 📱 apenas mobile
   },
 ]
+
+// ✅ Hook para detectar se é mobile
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const check = () =>
+      setIsMobile(/Android|iPhone|iPad|iPod|BlackBerry|Windows Phone/i.test(navigator.userAgent))
+    check()
+  }, [])
+
+  return isMobile
+}
 
 interface SegurancaScreenProps {
   userId: string
@@ -49,6 +67,11 @@ interface SegurancaScreenProps {
 export default function SegurancaScreen({ userId }: SegurancaScreenProps) {
   const { methods, totalAtivos, loading, toggling, toggle, isDisabled } =
     useAuthMethods(userId)
+
+  const isMobile = useIsMobile()
+
+  // ✅ Filtra os métodos de acordo com o dispositivo
+  const metodosFiltrados = METODOS.filter((m) => !m.mobileOnly || isMobile)
 
   return (
     <div className="space-y-3">
@@ -94,7 +117,7 @@ export default function SegurancaScreen({ userId }: SegurancaScreenProps) {
         </div>
       ) : (
         <div className="space-y-2">
-          {METODOS.map((item) => (
+          {metodosFiltrados.map((item) => (  // 👈 usa metodosFiltrados
             <SecurityMethodCard
               key={item.key}
               icon={item.icon}

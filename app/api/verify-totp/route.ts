@@ -18,12 +18,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Código inválido" }, { status: 400 });
     }
 
-    // Busca o secret pelo userId — server only
     const { data: profile, error } = await supabaseAdmin
       .from("users")
       .select("totp_secret")
       .eq("id", userId)
-      .single();
+      .maybeSingle(); // ✅ corrigido
 
     if (error || !profile?.totp_secret) {
       return NextResponse.json({ error: "Perfil não encontrado" }, { status: 404 });
