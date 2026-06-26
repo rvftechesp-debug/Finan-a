@@ -723,7 +723,12 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
   } = useAuthMethods(user.id)
 
   const activeCount = totalAtivos
-
+  
+   const methodLabels: Record<Method, string> = {
+    totp: '2FA (Autenticador)',
+    biometric: 'Biometria',
+    passkey: 'Face ID / Passkey',
+}
   const handleToggleMethod = async (method: Method, active: boolean) => {
     clearMessages()
     const err = await toggle(method, active)
@@ -740,11 +745,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     }
   }
 
-  const methodLabels: Record<Method, string> = {
-    totp: '2FA (Autenticador)',
-    biometric: 'Biometria',
-    passkey: 'Face ID / Passkey',
-  }
+  
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
