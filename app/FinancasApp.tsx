@@ -282,6 +282,28 @@ if (totpAtivo) {
   return;
 }
 
+// 🔒 NOVO: Se tem secret mas não está ativo na tabela, 
+// force reativação silenciosa para manter consistência
+if (!activeMethods.includes("totp") && !!profile.totp_secret) {
+  await supabase.from('user_auth_methods').upsert(
+    {
+      user_id: data.user.id,
+      method: 'totp',
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,method', ignoreDuplicates: false }
+  )
+  // Recarrega e pede 2FA
+  setPendingLoginProfile(profile);
+  setPendingTokens({
+    access_token: data.session!.access_token,
+    refresh_token: data.session!.refresh_token,
+  });
+  setShow2FALogin(true);
+  return;
+}
+
 onLogin(profile);
 
     } catch {
