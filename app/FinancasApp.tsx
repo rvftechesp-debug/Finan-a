@@ -314,29 +314,84 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
 
 
   const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(""); setSuccess("");
+  e.preventDefault();
+  setError(""); setSuccess("");
 
-    if (!regName.trim())    { setError("Digite seu nome completo"); return; }
-    if (!regPhone.trim())   { setError("Digite seu celular"); return; }
-    if (!regEmail.trim())   { setError("Digite seu e-mail"); return; }
-    if (!regUser.trim())    { setError("Escolha um nome de usuário"); return; }
-    if (!regPass.trim())    { setError("Digite uma senha"); return; }
-    if (regPass.length < 6) { setError("A senha deve ter pelo menos 6 caracteres"); return; }
-    if (regPass !== regConfirm) { setError("As senhas não conferem"); return; }
+  if (!regName.trim())    { setError("Digite seu nome completo"); return; }
+  if (!regPhone.trim())   { setError("Digite seu celular"); return; }
+  if (!regEmail.trim())   { setError("Digite seu e-mail"); return; }
+  if (!regUser.trim())    { setError("Escolha um nome de usuário"); return; }
+  if (!regPass.trim())    { setError("Digite uma senha"); return; }
+  if (regPass.length < 6) { setError("A senha deve ter pelo menos 6 caracteres"); return; }
+  if (regPass !== regConfirm) { setError("As senhas não conferem"); return; }
 
-    setLoading(true);
-    try {
-      const emailExistente = await getEmailByUsername(regUser.trim().toLowerCase());
-      if (emailExistente) { setError("Este nome de usuário já está em uso"); return; }
+  setLoading(true);
+  try {
+    const emailExistente = await getEmailByUsername(regUser.trim().toLowerCase());
+    if (emailExistente) { setError("Este nome de usuário já está em uso"); return; }
 
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: regEmail.trim().toLowerCase(),
-        password: regPass.trim(),
-      });
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email: regEmail.trim().toLowerCase(),
+      password: regPass.trim(),
+    });
 
-      if (signUpError || !data.user) {
-        ;
+    if (signUpError || !data.user) {
+      setError(signUpError?.message ?? "Erro ao criar conta. Tente novamente.");
+      return;
+    }
+
+    const novoProfile: Profile = {
+      id: data.user.id,
+      name: regName.trim(),
+      phone: regPhone.trim(),
+      username: regUser.trim().toLowerCase(),
+      email: regEmail.trim().toLowerCase(),
+      photo: "",
+      totp_secret: null,
+    };
+
+    const profileCriado = await createProfile(novoProfile.id, {
+      name: novoProfile.name,
+      phone: novoProfile.phone,
+      username: novoProfile.username,
+      email: novoProfile.email,
+      photo: "",
+      totp_secret: null,
+    });
+
+    if (!profileCriado) {
+      setError("Erro ao criar perfil. Tente novamente.");
+      return;
+    }
+
+    const secret = generateTotpSecret();
+    setTotpSecret(secret);
+    setPendingProfile(novoProfile);
+
+    // ✅ Salva o secret no profile
+    await updateProfile(novoProfile.id, { totp_secret: secret });
+
+    // ✅ NOVO: Cria o registro na user_auth_methods já como ativo
+    await supabase.from('user_auth_methods').upsert(
+      {
+        user_id: novoProfile.id,
+        method: 'totp',
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,method', ignoreDuplicates: false }
+    );
+
+    setShow2FAModal(true);
+
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Erro inesperado.";
+    setError(msg);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // ===================== FORGOT PASSWORD =====================
 
@@ -710,20 +765,30 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     passkey: 'Face ID / Passkey',
 }
   const handleToggleMethod = async (method: Method, active: boolean) => {
-    clearMessages()
-    const err = await toggle(method, active)
-    if (err) {
-      setError(err)
-      setTimeout(() => setError(''), 4000)
-    } else {
-      setSuccess(
-        active
-          ? `${methodLabels[method]} ativado com sucesso!`
-          : `${methodLabels[method]} desativado.`
-      )
-      setTimeout(() => setSuccess(''), 3000)
-    }
+  const handleToggleMethod = async (method: Method, active: boolean) => {
+  clearMessages()
+
+  // ✅ NOVO: Bloqueia ativação de TOTP sem secret configurado
+  if (method === 'totp' && active && !user.totp_secret) {
+    setError('O autenticador 2FA não está configurado. Contate o suporte ou recrie sua conta para gerar um novo QR Code.')
+    setTimeout(() => setError(''), 5000)
+    return
   }
+
+  const err = await toggle(method, active)
+  if (err) {
+    setError(err)
+    setTimeout(() => setError(''), 4000)
+  } else {
+    setSuccess(
+      active
+        ? `${methodLabels[method]} ativado com sucesso!`
+        : `${methodLabels[method]} desativado.`
+    )
+    setTimeout(() => setSuccess(''), 3000)
+  }
+}
+
   
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
