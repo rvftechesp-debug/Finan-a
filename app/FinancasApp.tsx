@@ -40,6 +40,7 @@ import type { IncomeEntry } from "@/app/hooks/useFinance";
 import { useAuthMethods } from '@/app/hooks/useAuthMethods';
 import { SecurityMethodCard } from '@/components/SecurityMethodCard';
 import type { AuthMethod } from "@/app/hooks/useAuthMethods";
+import { useIsMobile } from '@/app/hooks/useIsMobile'
 
 // ===================== TIPOS =====================
 
@@ -267,27 +268,21 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
         .filter((m) => m.is_active)
         .map((m) => m.method as AuthMethod);
 
-      const totpAtivo = activeMethods.includes("totp") && !!profile.totp_secret;
-      const passkeyAtiva = activeMethods.includes("passkey");
-      const biometricAtiva = activeMethods.includes("biometric");
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-      if (totpAtivo) {
-        setPendingLoginProfile(profile);
-        setPendingTokens({
-          access_token: data.session!.access_token,
-          refresh_token: data.session!.refresh_token,
-        });
-        setShow2FALogin(true);
-        return;
-      }
+const totpAtivo = activeMethods.includes("totp") && !!profile.totp_secret;
 
-      if (passkeyAtiva || biometricAtiva) {
-        setPendingLoginProfile(profile);
-        setShowPasskeyLogin(true);
-        return;
-      }
+if (totpAtivo) {
+  setPendingLoginProfile(profile);
+  setPendingTokens({
+    access_token: data.session!.access_token,
+    refresh_token: data.session!.refresh_token,
+  });
+  setShow2FALogin(true);
+  return;
+}
 
-      onLogin(profile);
+onLogin(profile);
 
     } catch {
       setError("Erro ao conectar. Tente novamente.");
@@ -713,6 +708,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
+  const isMobile = useIsMobile()
   const [success, setSuccess] = useState('')
   const clearMessages = () => { setError(''); setSuccess('') }
   const [photoPreview, setPhotoPreview] = useState<string>(user.photo as string || '')
@@ -958,50 +954,56 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
       )}
 
       {tab === 'segurança' && (
-        <Card className="bg-white/[0.03] border-white/[0.07]">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-orange-500" /> Métodos de Autenticação
-            </CardTitle>
-            <p className="text-xs text-[#666] mt-1">
-              Escolha como deseja autenticar no login. Pelo menos <strong className="text-orange-400">1 método</strong> deve permanecer ativo.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
-              activeCount >= 2
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                : activeCount === 1
-                ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
-                : 'bg-red-500/10 border-red-500/20 text-red-400'
-            }`}>
-              {activeCount >= 2 ? (
-                <><CheckCircle2 className="w-3.5 h-3.5" /> {activeCount} métodos ativos — ótima segurança!</>
-              ) : activeCount === 1 ? (
-                <><AlertTriangle className="w-3.5 h-3.5" /> Apenas 1 método ativo — considere ativar mais.</>
-              ) : (
-                <><AlertTriangle className="w-3.5 h-3.5" /> Nenhum método ativo — ative pelo menos 1.</>
-              )}
-            </div>
+    <Card className="bg-white/[0.03] border-white/[0.07]">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-orange-500" /> Métodos de Autenticação
+        </CardTitle>
+        <p className="text-xs text-[#666] mt-1">
+          Escolha como deseja autenticar no login. Pelo menos{' '}
+          <strong className="text-orange-400">1 método</strong> deve permanecer ativo.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+          totalAtivos >= 2
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+            : totalAtivos === 1
+            ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
+            : 'bg-red-500/10 border-red-500/20 text-red-400'
+        }`}>
+          {totalAtivos >= 2 ? (
+            <><CheckCircle2 className="w-3.5 h-3.5" /> {totalAtivos} métodos ativos — ótima segurança!</>
+          ) : totalAtivos === 1 ? (
+            <><AlertTriangle className="w-3.5 h-3.5" /> Apenas 1 método ativo — considere ativar mais.</>
+          ) : (
+            <><AlertTriangle className="w-3.5 h-3.5" /> Nenhum método ativo — ative pelo menos 1.</>
+          )}
+        </div>
 
-            {methodsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader className="w-5 h-5 text-orange-500 animate-spin" />
-                <span className="text-[#666] text-sm ml-2">Carregando...</span>
-              </div>
-            ) : (
+        {methodsLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader className="w-5 h-5 text-orange-500 animate-spin" />
+            <span className="text-[#666] text-sm ml-2">Carregando...</span>
+          </div>
+        ) : (
+          <>
+            {/* 2FA — sempre visível em qualquer dispositivo */}
+            <SecurityMethodCard
+              icon={ShieldCheck}
+              title="2FA — Autenticador"
+              description="Código de 6 dígitos via Google Authenticator ou similar"
+              badge="Recomendado"
+              badgeColor="bg-orange-500/10 border-orange-500/30 text-orange-400"
+              isActive={methods.totp}
+              isToggling={toggling === 'totp'}
+              disabled={methods.totp && totalAtivos === 1}
+              onToggle={(active) => handleToggleMethod('totp', active)}
+            />
+
+            {/* Biometria e Face ID — apenas no mobile */}
+            {isMobile && (
               <>
-                <SecurityMethodCard
-                  icon={ShieldCheck}
-                  title="2FA — Autenticador"
-                  description="Código de 6 dígitos via Google Authenticator ou similar"
-                  badge="Recomendado"
-                  badgeColor="bg-orange-500/10 border-orange-500/30 text-orange-400"
-                  isActive={methods.totp}
-                  isToggling={toggling === 'totp'}
-                  disabled={methods.totp && activeCount === 1}
-                  onToggle={(active) => handleToggleMethod('totp', active)}
-                />
                 <SecurityMethodCard
                   icon={Fingerprint}
                   title="Biometria"
@@ -1010,7 +1012,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                   badgeColor="bg-blue-500/10 border-blue-500/30 text-blue-400"
                   isActive={methods.biometric}
                   isToggling={toggling === 'biometric'}
-                  disabled={methods.biometric && activeCount === 1}
+                  disabled={methods.biometric && totalAtivos === 1}
                   onToggle={(active) => handleToggleMethod('biometric', active)}
                 />
                 <SecurityMethodCard
@@ -1021,20 +1023,33 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
                   badgeColor="bg-purple-500/10 border-purple-500/30 text-purple-400"
                   isActive={methods.passkey}
                   isToggling={toggling === 'passkey'}
-                  disabled={methods.passkey && activeCount === 1}
+                  disabled={methods.passkey && totalAtivos === 1}
                   onToggle={(active) => handleToggleMethod('passkey', active)}
                 />
               </>
             )}
 
-            <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 mt-2">
-              <p className="text-[#555] text-xs leading-relaxed">
-                💡 Os métodos marcados ficam disponíveis como opção ao fazer login. O último método ativo não pode ser desativado para garantir o acesso à conta.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            {/* Aviso no desktop */}
+            {!isMobile && (
+              <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3">
+                <p className="text-[#555] text-xs leading-relaxed">
+                  📱 Biometria e Face ID estão disponíveis apenas no celular.
+                  Acesse pelo dispositivo móvel para ativar esses métodos.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 mt-2">
+          <p className="text-[#555] text-xs leading-relaxed">
+            💡 Os métodos marcados ficam disponíveis como opção ao fazer login.
+            O último método ativo não pode ser desativado para garantir o acesso à conta.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )}
     </div>
   )
 }
