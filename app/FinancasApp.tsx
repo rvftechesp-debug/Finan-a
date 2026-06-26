@@ -1001,33 +1001,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
               onToggle={(active) => handleToggleMethod('totp', active)}
             />
 
-            {/* Biometria e Face ID — apenas no mobile */}
-            {isMobile && (
-              <>
-                <SecurityMethodCard
-                  icon={Fingerprint}
-                  title="Biometria"
-                  description="Autenticação por impressão digital no dispositivo"
-                  badge="Dispositivo"
-                  badgeColor="bg-blue-500/10 border-blue-500/30 text-blue-400"
-                  isActive={methods.biometric}
-                  isToggling={toggling === 'biometric'}
-                  disabled={methods.biometric && totalAtivos === 1}
-                  onToggle={(active) => handleToggleMethod('biometric', active)}
-                />
-                <SecurityMethodCard
-                  icon={ScanFace}
-                  title="Face ID / Passkey"
-                  description="Reconhecimento facial ou chave de acesso do dispositivo"
-                  badge="Passkey"
-                  badgeColor="bg-purple-500/10 border-purple-500/30 text-purple-400"
-                  isActive={methods.passkey}
-                  isToggling={toggling === 'passkey'}
-                  disabled={methods.passkey && totalAtivos === 1}
-                  onToggle={(active) => handleToggleMethod('passkey', active)}
-                />
-              </>
-            )}
+            
 
             {/* Aviso no desktop */}
             {!isMobile && (
