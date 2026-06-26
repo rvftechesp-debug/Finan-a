@@ -346,8 +346,18 @@ onLogin(profile);
       setTotpSecret(secret);
       setPendingProfile(novoProfile);
 
-      await updateProfile(novoProfile.id, { totp_secret: secret });
-
+      
+    await updateProfile(novoProfile.id, { totp_secret: secret });
+      
+    await supabase.from('user_auth_methods').upsert(
+  {
+    user_id: novoProfile.id,
+    method: 'totp',
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  },
+  { onConflict: 'user_id,method', ignoreDuplicates: false }
+)
       setShow2FAModal(true);
 
     } catch (err: unknown) {
