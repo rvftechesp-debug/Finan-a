@@ -239,79 +239,79 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
   };
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (!loginUser.trim() || !loginPass.trim()) {
-      setError("Preencha usuário e senha");
+  e.preventDefault();
+  setError("");
+  if (!loginUser.trim() || !loginPass.trim()) {
+    setError("Preencha usuário e senha");
+    return;
+  }
+  setLoading(true);
+  try {
+    const realEmail = await getEmailByUsername(loginUser.trim().toLowerCase());
+    if (!realEmail) { setError("Usuário não encontrado"); return; }
+
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email: realEmail,
+      password: loginPass.trim(),
+    });
+    if (authError || !data.user) { setError("Usuário ou senha incorretos"); return; }
+
+    const profile = await getProfile(data.user.id);
+    if (!profile) { setError("Perfil não encontrado. Contate o suporte."); return; }
+
+    const { data: authMethods } = await supabase
+      .from("user_auth_methods")
+      .select("method, is_active")
+      .eq("user_id", data.user.id);
+
+    const activeMethods = (authMethods ?? [])
+      .filter((m) => m.is_active)
+      .map((m) => m.method as AuthMethod);
+
+    const totpAtivoNaTabela = activeMethods.includes("totp");
+    const temSecret = !!profile.totp_secret;
+
+    // ✅ Caso 1: Tudo certo, pede 2FA normalmente
+    if (totpAtivoNaTabela && temSecret) {
+      setPendingLoginProfile(profile);
+      setPendingTokens({
+        access_token: data.session!.access_token,
+        refresh_token: data.session!.refresh_token,
+      });
+      setShow2FALogin(true);
       return;
     }
-    setLoading(true);
-    try {
-      const realEmail = await getEmailByUsername(loginUser.trim().toLowerCase());
-      if (!realEmail) { setError("Usuário não encontrado"); return; }
 
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: realEmail,
-        password: loginPass.trim(),
+    // ✅ Caso 2: Tem secret mas a tabela está dessincronizada — corrige e pede 2FA
+    if (!totpAtivoNaTabela && temSecret) {
+      await supabase.from('user_auth_methods').upsert(
+        {
+          user_id: data.user.id,
+          method: 'totp',
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,method', ignoreDuplicates: false }
+      );
+      setPendingLoginProfile(profile);
+      setPendingTokens({
+        access_token: data.session!.access_token,
+        refresh_token: data.session!.refresh_token,
       });
-      if (authError || !data.user) { setError("Usuário ou senha incorretos"); return; }
-
-      const profile = await getProfile(data.user.id);
-      if (!profile) { setError("Perfil não encontrado. Contate o suporte."); return; }
-
-      const { data: authMethods } = await supabase
-        .from("user_auth_methods")
-        .select("method, is_active")
-        .eq("user_id", data.user.id);
-
-      const activeMethods = (authMethods ?? [])
-        .filter((m) => m.is_active)
-        .map((m) => m.method as AuthMethod);
-
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-const totpAtivo = activeMethods.includes("totp") && !!profile.totp_secret;
-
-if (totpAtivo) {
-  setPendingLoginProfile(profile);
-  setPendingTokens({
-    access_token: data.session!.access_token,
-    refresh_token: data.session!.refresh_token,
-  });
-  setShow2FALogin(true);
-  return;
-}
-
-// 🔒 NOVO: Se tem secret mas não está ativo na tabela, 
-// force reativação silenciosa para manter consistência
-if (!activeMethods.includes("totp") && !!profile.totp_secret) {
-  await supabase.from('user_auth_methods').upsert(
-    {
-      user_id: data.user.id,
-      method: 'totp',
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,method', ignoreDuplicates: false }
-  )
-  // Recarrega e pede 2FA
-  setPendingLoginProfile(profile);
-  setPendingTokens({
-    access_token: data.session!.access_token,
-    refresh_token: data.session!.refresh_token,
-  });
-  setShow2FALogin(true);
-  return;
-}
-
-onLogin(profile);
-
-    } catch {
-      setError("Erro ao conectar. Tente novamente.");
-    } finally {
-      setLoading(false);
+      setShow2FALogin(true);
+      return;
     }
-  };
+
+    // ✅ Caso 3: Sem 2FA configurado, entra normalmente
+    onLogin(profile);
+
+  } catch {
+    setError("Erro ao conectar. Tente novamente.");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -336,59 +336,7 @@ onLogin(profile);
       });
 
       if (signUpError || !data.user) {
-        setError(signUpError?.message ?? "Erro ao criar conta. Tente novamente.");
-        return;
-      }
-
-      const novoProfile: Profile = {
-        id: data.user.id,
-        name: regName.trim(),
-        phone: regPhone.trim(),
-        username: regUser.trim().toLowerCase(),
-        email: regEmail.trim().toLowerCase(),
-        photo: "",
-        totp_secret: null,
-      };
-
-      const profileCriado = await createProfile(novoProfile.id, {
-        name: novoProfile.name,
-        phone: novoProfile.phone,
-        username: novoProfile.username,
-        email: novoProfile.email,
-        photo: "",
-        totp_secret: null,
-      });
-
-      if (!profileCriado) {
-        setError("Erro ao criar perfil. Tente novamente.");
-        return;
-      }
-
-      const secret = generateTotpSecret();
-      setTotpSecret(secret);
-      setPendingProfile(novoProfile);
-
-      
-    await updateProfile(novoProfile.id, { totp_secret: secret });
-      
-    await supabase.from('user_auth_methods').upsert(
-  {
-    user_id: novoProfile.id,
-    method: 'totp',
-    is_active: true,
-    updated_at: new Date().toISOString(),
-  },
-  { onConflict: 'user_id,method', ignoreDuplicates: false }
-)
-      setShow2FAModal(true);
-
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro inesperado.";
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+        ;
 
   // ===================== FORGOT PASSWORD =====================
 
