@@ -256,6 +256,36 @@ function buildReportHtml(data: MonthlyReportData): string {
       a.click();
       URL.revokeObjectURL(url);
     }
+   @media print {
+  /* Esconde TUDO */
+  html body {
+    visibility: hidden !important;
+  }
+
+  /* Mostra só o extrato */
+  .print-extrato,
+  .print-extrato * {
+    visibility: visible !important;
+  }
+
+  /* Posiciona o extrato no topo da página */
+  .print-extrato {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    background: white !important;
+    padding: 24px !important;
+    z-index: 99999 !important;
+  }
+
+  /* Esconde botões dentro do extrato */
+  .no-print {
+    visibility: hidden !important;
+    display: none !important;
+  }
+}
+
   </script>
 </body>
 </html>`;

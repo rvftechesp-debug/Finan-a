@@ -41,6 +41,8 @@ import { useAuthMethods } from '@/app/hooks/useAuthMethods';
 import { SecurityMethodCard } from '@/components/SecurityMethodCard';
 import type { AuthMethod } from "@/app/hooks/useAuthMethods";
 import { useIsMobile } from '@/app/hooks/useIsMobile'
+import { AIInsightCard } from "@/components/AIInsightCard";
+
 
 // ===================== TIPOS =====================
 
@@ -311,7 +313,10 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
     setLoading(false);
   }
 };
+<<<<<<< HEAD
 
+=======
+>>>>>>> a362061 (feat: admin usuarios page)
 
   const handleRegister = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -391,7 +396,10 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
     setLoading(false);
   }
 };
+HEAD
 
+
+a362061 (feat: admin usuarios page)
 
   // ===================== FORGOT PASSWORD =====================
 
@@ -410,10 +418,10 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
     try {
       // 1. Busca o profile pelo username diretamente no banco
       const { data: profileRow, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, totp_secret")
-        .eq("username", forgotUser.trim().toLowerCase())
-        .single();
+  .from("users")
+  .select("id, totp_secret")
+  .eq("username", forgotUser.trim().toLowerCase())
+  .single();
 
       if (profileError || !profileRow) {
         setForgotError("Usuário não encontrado");
@@ -758,8 +766,37 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
   } = useAuthMethods(user.id)
 
   const activeCount = totalAtivos
+<<<<<<< HEAD
   
    const methodLabels: Record<Method, string> = {
+=======
+
+  const handleToggleMethod = async (method: Method, active: boolean) => {
+  clearMessages()
+
+  // ✅ NOVO: Bloqueia ativação de TOTP sem secret configurado
+  if (method === 'totp' && active && !user.totp_secret) {
+    setError('O autenticador 2FA não está configurado. Contate o suporte ou recrie sua conta para gerar um novo QR Code.')
+    setTimeout(() => setError(''), 5000)
+    return
+  }
+
+  const err = await toggle(method, active)
+  if (err) {
+    setError(err)
+    setTimeout(() => setError(''), 4000)
+  } else {
+    setSuccess(
+      active
+        ? `${methodLabels[method]} ativado com sucesso!`
+        : `${methodLabels[method]} desativado.`
+    )
+    setTimeout(() => setSuccess(''), 3000)
+  }
+}
+
+  const methodLabels: Record<Method, string> = {
+>>>>>>> a362061 (feat: admin usuarios page)
     totp: '2FA (Autenticador)',
     biometric: 'Biometria',
     passkey: 'Face ID / Passkey',
@@ -1177,6 +1214,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
   const [investTab, setInvestTab] = useState<"radar" | "analise">("analise");
   const [formDueDate, setFormDueDate] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [attachPreview, setAttachPreview] = useState<{ url: string; mime: string } | null>(null);
 
   const [userPhoto, setUserPhoto] = useState(user.photo || "");
   useEffect(() => { setUserPhoto(user.photo || ""); }, [user.photo]);
@@ -1188,7 +1226,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
   const [extratoFiltroCategoria, setExtratoFiltroCategoria] = useState("todas");
   const [extratoFiltroTipo, setExtratoFiltroTipo] = useState<"ambos" | "gastos" | "receitas">("ambos");
   const [extratoMes, setExtratoMes] = useState(selectedMonth);
-
+  const [gastosSubTab, setGastosSubTab] = useState<"lancamentos" | "analise">("lancamentos");
   const currentYear = new Date().getFullYear();
 
   const [form, setForm] = useState({
@@ -1211,46 +1249,83 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
     if (showProfileMenu) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showProfileMenu]);
+  
+ const lastNMonths = (n: number) => {
+  const now = new Date();
+  return finance.expenses.filter(e => {
+    const d = new Date(e.date + "T00:00:00");
+    const diff =
+      (now.getFullYear() - d.getFullYear()) * 12 +
+      (now.getMonth() - d.getMonth());
+    return diff >= 0 && diff < n;
+  });
+};
 
-  const handleAttachClick = (type: "expense" | "income", id: number, existingAttachment?: string) => {
-    if (existingAttachment) { window.open(existingAttachment, "_blank"); return; }
-    setAttachTarget({ type, id });
-    attachInputRef.current?.click();
-  };
+const last3Months = lastNMonths(3);
+const last6Months = lastNMonths(6);
 
-  const handleAttachFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    const target = attachTarget;
-    e.target.value = "";
-    if (!file || !target) return;
-    if (file.size > 5 * 1024 * 1024) { alert("Arquivo muito grande (máximo 5MB)"); return; }
-    setAttachLoading(true);
-    try {
-      let dataUrl: string;
-      if (file.type.startsWith("image/")) {
-        dataUrl = await compressImage(file, { maxWidth: 1200, maxHeight: 1200, quality: 0.7 });
-      } else {
-        dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      }
-      if (target.type === "expense") {
-        const exp = finance.expenses.find(x => x.id === target.id);
-        if (exp) finance.updateExpense({ ...exp, attachment: dataUrl, attachmentName: file.name } as Expense);
-      } else {
-        const inc = finance.incomeEntries.find(x => x.id === target.id);
-        if (inc) finance.updateIncome({ ...inc, attachment: dataUrl, attachmentName: file.name });
-      }
-    } catch {
-      alert("Erro ao processar o arquivo.");
-    } finally {
-      setAttachLoading(false);
-      setAttachTarget(null);
+const handleAttachFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  const target = attachTarget;
+  e.target.value = "";
+  if (!file || !target) return;
+  if (file.size > 5 * 1024 * 1024) { alert("Arquivo muito grande (máximo 5MB)"); return; }
+  setAttachLoading(true);
+  try {
+    let dataUrl: string;
+    if (file.type.startsWith("image/")) {
+      dataUrl = await compressImage(file, { maxWidth: 1200, maxHeight: 1200, quality: 0.7 });
+    } else {
+      dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
     }
-  };
+    if (target.type === "expense") {
+      const exp = finance.expenses.find(x => x.id === target.id);
+      if (exp) finance.updateExpense({ ...exp, attachment: dataUrl, attachmentName: file.name } as Expense);
+    } else {
+      const inc = finance.incomeEntries.find(x => x.id === target.id);
+      if (inc) finance.updateIncome({ ...inc, attachment: dataUrl, attachmentName: file.name });
+    }
+  } catch {
+    alert("Erro ao processar o arquivo.");
+  } finally {
+    setAttachLoading(false);
+    setAttachTarget(null);
+  }
+};
+
+
+const handleAttachClick = (type: "expense" | "income", id: number, existingAttachment?: string) => {
+  if (existingAttachment) {
+    const mimeMatch = existingAttachment.match(/^data:([^;]+);base64,/);
+    const mime = mimeMatch?.[1] ?? "application/octet-stream";
+
+    if (mime === "application/pdf") {
+      // PDF ainda abre em nova aba (não dá pra exibir bem em modal mobile)
+      const byteString = atob(existingAttachment.split(",")[1]);
+      const byteArray = new Uint8Array(byteString.length);
+      for (let i = 0; i < byteString.length; i++) byteArray[i] = byteString.charCodeAt(i);
+      const blob = new Blob([byteArray], { type: mime });
+      const blobUrl = URL.createObjectURL(blob);
+      const win = window.open("", "_blank");
+      if (win) {
+        win.document.write(`<iframe src="${blobUrl}" style="width:100%;height:100vh;border:none;"></iframe>`);
+        win.document.close();
+      }
+    } else {
+      // Imagem: abre no modal
+      setAttachPreview({ url: existingAttachment, mime });
+    }
+    return;
+  }
+  setAttachTarget({ type, id });
+  attachInputRef.current?.click();
+};
+
 
   const handleAddExpense = async () => {
     if (await finance.addExpense({ ...form, due_date: formDueDate || null })) {
@@ -1337,16 +1412,26 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity flex items-center gap-2 cursor-pointer shadow-lg shadow-orange-500/20" onClick={() => setShowForm(v => !v)}>
-              <Plus className="w-4 h-4" /> Adicionar Gasto
-            </button>
-            <button onClick={() => { setExtratoMes(selectedMonth); setShowExtrato(true); }} className="bg-white/5 border border-white/10 text-[#ccc] hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-colors cursor-pointer flex items-center gap-2">
-              <FileText className="w-4 h-4" /> <span>Extrato</span>
-            </button>
-            <button onClick={() => setModalAberto(true)} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg transition-colors shadow-md cursor-pointer">
-              <PlusCircle className="w-4 h-4" /> <span>Adicionar Receita</span>
-            </button>
-          </div>
+  <button
+    className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity flex items-center gap-2 cursor-pointer shadow-lg shadow-orange-500/20"
+    onClick={() => setShowForm(v => !v)}
+  >
+    <Plus className="w-4 h-4" /> Adicionar Gasto
+  </button>
+  <button
+    onClick={() => { setExtratoMes(selectedMonth); setShowExtrato(true); }}
+    className="bg-white/5 border border-white/10 text-[#ccc] hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-colors cursor-pointer flex items-center gap-2"
+  >
+    <FileText className="w-4 h-4" /> <span>Extrato</span>
+  </button>
+  <button
+    onClick={() => setModalAberto(true)}
+    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg transition-colors shadow-md cursor-pointer"
+  >
+    <PlusCircle className="w-4 h-4" /> <span>Adicionar Receita</span>
+  </button>
+ </div>
+
         </div>
 
         {/* Month Selector */}
@@ -1576,260 +1661,234 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
         )}
 
         {/* ===== GASTOS ===== */}
-        {activeTab === "gastos" && (
-          <div className="space-y-4">
+       {activeTab === "gastos" && (
+  <div className="space-y-4">
+    {/* Cards A Pagar / Já Pago */}
+    {(() => {
+      const totalPending = finance.filtered.filter(e => e.status !== "paid").reduce((s, e) => s + e.amount, 0);
+      const totalPaid    = finance.filtered.filter(e => e.status === "paid").reduce((s, e) => s + e.amount, 0);
+      return (
+        <div className="grid grid-cols-2 gap-3">
+          <Card className="bg-yellow-500/10 border-yellow-500/20">
+            <CardContent className="p-3.5">
+              <p className="text-xs text-yellow-500 font-semibold mb-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> A Pagar</p>
+              <p className="text-lg font-bold text-yellow-400">{formatBRL(totalPending)}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-emerald-500/10 border-emerald-500/20">
+            <CardContent className="p-3.5">
+              <p className="text-xs text-emerald-500 font-semibold mb-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Já Pago</p>
+              <p className="text-lg font-bold text-emerald-400">{formatBRL(totalPaid)}</p>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    })()}
+
+    {/* Sub-abas: Lançamentos | Análise de Gastos */}
+    <div className="flex gap-2">
+      <button
+        onClick={() => setGastosSubTab("lancamentos")}
+        className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-all cursor-pointer border ${
+          gastosSubTab === "lancamentos"
+            ? "bg-orange-500/20 border-orange-500/30 text-white"
+            : "bg-white/[0.03] border-white/10 text-[#888] hover:text-white"
+        }`}
+      >
+        <Receipt className="w-4 h-4" />
+        <span>Lançamentos</span>
+      </button>
+      <button
+        onClick={() => setGastosSubTab("analise")}
+        className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-all cursor-pointer border ${
+          gastosSubTab === "analise"
+            ? "bg-purple-500/20 border-purple-500/30 text-white"
+            : "bg-white/[0.03] border-white/10 text-[#888] hover:text-white"
+        }`}
+      >
+        <Zap className="w-4 h-4" />
+        <span>Análise de Gastos</span>
+      </button>
+    </div>
+
+    {/* Conteúdo da sub-aba Lançamentos */}
+    {gastosSubTab === "lancamentos" && (
+      <>
+        {/* Filtros Todos / Pendentes / Pagos */}
+        <div className="flex gap-2 flex-wrap">
+          {(["all", "pending", "paid"] as const).map(f => (
+            <button key={f} onClick={() => setStatusFilter(f)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer border ${
+                statusFilter === f
+                  ? "bg-orange-500 border-orange-500 text-white"
+                  : "bg-white/[0.03] border-white/10 text-[#888] hover:text-white"
+              }`}>
+              {f === "all" ? "📋 Todos" : f === "pending" ? "⏳ Pendentes" : "✅ Pagos"}
+            </button>
+          ))}
+        </div>
+
+        {finance.sortedByCategory.length > 0 && (
+          <Card className="bg-white/[0.03] border-white/[0.07]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
+                <PieIcon className="w-4 h-4 text-orange-500" /> Por Categoria
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {finance.sortedByCategory.map(c => (
+                <div key={c.name}>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-[#ccc] flex items-center gap-1.5">{c.icon} {c.name}</span>
+                    <span className="text-xs font-bold" style={{ color: c.color }}>{formatBRL(c.value)}</span>
+                  </div>
+                  <div className="bg-white/[0.07] rounded-full h-1.5 overflow-hidden">
+                    <div className="h-1.5 rounded-full transition-all duration-700" style={{ width: `${(c.value / finance.totalExpenses) * 100}%`, backgroundColor: c.color }} />
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className="bg-white/[0.03] border-white/[0.07]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-orange-500" />
+              Lançamentos ({finance.filtered.length + finance.filteredIncomes.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
             {(() => {
-              const totalPending = finance.filtered.filter(e => e.status !== "paid").reduce((s, e) => s + e.amount, 0);
-              const totalPaid    = finance.filtered.filter(e => e.status === "paid").reduce((s, e) => s + e.amount, 0);
+              const expFiltered = finance.filtered.filter(e =>
+                statusFilter === "all" ? true : statusFilter === "paid" ? e.status === "paid" : e.status !== "paid"
+              );
+              const incFiltered = finance.filteredIncomes.filter(e =>
+                statusFilter === "all" ? true : statusFilter === "paid" ? e.status === "paid" : e.status !== "paid"
+              );
+              const allItems = [
+                ...expFiltered.map(e => ({ ...e, _type: "expense" as const })),
+                ...incFiltered.map(e => ({ ...e, _type: "income" as const })),
+              ].sort((a, b) => +new Date(b.date) - +new Date(a.date));
+
+              if (allItems.length === 0)
+                return <p className="text-[#666] text-[13px] text-center py-4">Nenhum lançamento encontrado.</p>;
+
               return (
-                <div className="grid grid-cols-2 gap-3">
-                  <Card className="bg-yellow-500/10 border-yellow-500/20">
-                    <CardContent className="p-3.5">
-                      <p className="text-xs text-yellow-500 font-semibold mb-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> A Pagar</p>
-                      <p className="text-lg font-bold text-yellow-400">{formatBRL(totalPending)}</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-emerald-500/10 border-emerald-500/20">
-                    <CardContent className="p-3.5">
-                      <p className="text-xs text-emerald-500 font-semibold mb-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Já Pago</p>
-                      <p className="text-lg font-bold text-emerald-400">{formatBRL(totalPaid)}</p>
-                    </CardContent>
-                  </Card>
+                <div className="space-y-0">
+                  {allItems.map(item => {
+                    if (item._type === "expense") {
+                      const e = item as Expense & { _type: "expense" };
+                      const cat = CATEGORIES.find(c => c.name === e.category);
+                      const isEditing = editingExpense?.id === e.id;
+                      const dueDateStatus = getDueDateStatus(e.due_date, e.status === "paid");
+
+                      return (
+                        <div key={`exp-${e.id}`} className="py-3.5 border-b border-white/[0.03] last:border-b-0">
+                          {isEditing && editingExpense ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              <input className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500 placeholder:text-[#666]" value={editingExpense.description} onChange={ev => setEditingExpense({ ...editingExpense, description: ev.target.value })} placeholder="Descrição" />
+                              <input type="number" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.amount} onChange={ev => setEditingExpense({ ...editingExpense, amount: parseFloat(ev.target.value) || 0 })} />
+                              <input type="date" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.date} onChange={ev => setEditingExpense({ ...editingExpense, date: ev.target.value })} />
+                              <input type="date" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.due_date ?? ""} onChange={ev => setEditingExpense({ ...editingExpense, due_date: ev.target.value || null })} />
+                              <select className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.category} onChange={ev => setEditingExpense({ ...editingExpense, category: ev.target.value })}>
+                                {CATEGORIES.map(c => <option key={c.name} value={c.name} className="bg-[#1a1a2e]">{c.icon} {c.name}</option>)}
+                              </select>
+                              <button onClick={() => { finance.updateExpense(editingExpense); setEditingExpense(null); }} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all"><Check className="w-3 h-3" /> Salvar</button>
+                              <button onClick={() => setEditingExpense(null)} className="bg-white/5 text-[#888] border border-white/10 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-white/10 transition-all"><X className="w-3 h-3" /> Cancelar</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">{cat?.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
+                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                  <p className="text-[#888] text-[11px] m-0">{e.category} — {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}</p>
+                                  {e.status === "paid" ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-semibold"><CheckCircle2 className="w-2.5 h-2.5" />Pago{e.paid_at && ` — ${new Date(e.paid_at + "T00:00:00").toLocaleDateString("pt-BR")}`}</span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 font-semibold"><AlertTriangle className="w-2.5 h-2.5" /> Pendente</span>
+                                  )}
+                                  {e.due_date && dueDateStatus && dueDateStatus !== "ok" && (
+                                    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${dueDateStatus === "overdue" ? "bg-red-500/15 text-red-400 border-red-500/20" : dueDateStatus === "due-today" ? "bg-red-500/10 text-red-300 border-red-400/20" : "bg-yellow-500/15 text-yellow-400 border-yellow-500/20"}`}>
+                                      {getDueDateLabel(dueDateStatus, e.due_date)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="font-bold text-sm whitespace-nowrap" style={{ color: cat?.color || "#F97316" }}>{formatBRL(e.amount)}</span>
+                              <button onClick={() => finance.markAsPaid("expense", e.id, e.status !== "paid")} className={`p-1.5 rounded-lg transition-all cursor-pointer border ${e.status === "paid" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400" : "bg-white/5 border-white/10 text-white/30 hover:bg-emerald-500/10 hover:border-emerald-500/20 hover:text-emerald-400"}`}><CheckCircle2 className="w-4 h-4" /></button>
+                              <button onClick={() => handleAttachClick("expense", e.id, e.attachment)} className="bg-transparent border-none text-white/20 hover:text-blue-400 cursor-pointer p-1.5 rounded-lg hover:bg-blue-500/10 transition-all"><Paperclip className="w-4 h-4" /></button>
+                              <button onClick={() => setEditingExpense(e)} className="bg-transparent border-none text-white/20 hover:text-orange-400 cursor-pointer p-1.5 rounded-lg hover:bg-orange-500/10 transition-all"><Pencil className="w-4 h-4" /></button>
+                              <button onClick={() => finance.removeExpense(e.id)} className="bg-transparent border-none text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all"><Trash2 className="w-4 h-4" /></button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    } else {
+                      const e = item as IncomeEntry & { _type: "income" };
+                      const isEditing = editingIncome?.id === e.id;
+                      return (
+                        <div key={`inc-${e.id}`} className="py-3.5 border-b border-white/[0.03] last:border-b-0">
+                          {isEditing && editingIncome ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              <input className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500 placeholder:text-[#666]" value={editingIncome.description} onChange={ev => setEditingIncome({ ...editingIncome, description: ev.target.value })} placeholder="Descrição" />
+                              <input type="number" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.amount} onChange={ev => setEditingIncome({ ...editingIncome, amount: parseFloat(ev.target.value) || 0 })} />
+                              <input type="date" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.date} onChange={ev => setEditingIncome({ ...editingIncome, date: ev.target.value })} />
+                              <select className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.type} onChange={ev => setEditingIncome({ ...editingIncome, type: ev.target.value })}>
+                                <option value="salario" className="bg-[#1a1a2e]">💼 Salário</option>
+                                <option value="freelance" className="bg-[#1a1a2e]">💻 Freelance</option>
+                                <option value="investimento" className="bg-[#1a1a2e]">📈 Investimento</option>
+                                <option value="outro" className="bg-[#1a1a2e]">💰 Outro</option>
+                              </select>
+                              <button onClick={() => { finance.updateIncome(editingIncome); setEditingIncome(null); }} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all"><Check className="w-3 h-3" /> Salvar</button>
+                              <button onClick={() => setEditingIncome(null)} className="bg-white/5 text-[#888] border border-white/10 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-white/10 transition-all"><X className="w-3 h-3" /> Cancelar</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">💰</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
+                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                  <p className="text-[#888] text-[11px] m-0">Receita — {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}</p>
+                                  {e.status === "paid" ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-semibold"><CheckCircle2 className="w-2.5 h-2.5" /> Recebido</span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 font-semibold"><AlertTriangle className="w-2.5 h-2.5" /> A receber</span>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="font-bold text-sm whitespace-nowrap text-emerald-400">+{formatBRL(e.amount)}</span>
+                              <button onClick={() => finance.markAsPaid("income", e.id, e.status !== "paid")} className={`p-1.5 rounded-lg transition-all cursor-pointer border ${e.status === "paid" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400" : "bg-white/5 border-white/10 text-white/30 hover:bg-emerald-500/10 hover:border-emerald-500/20 hover:text-emerald-400"}`}><CheckCircle2 className="w-4 h-4" /></button>
+                              <button onClick={() => handleAttachClick("income", e.id, e.attachment)} className="bg-transparent border-none text-white/20 hover:text-blue-400 cursor-pointer p-1.5 rounded-lg hover:bg-blue-500/10 transition-all"><Paperclip className="w-4 h-4" /></button>
+                              <button onClick={() => setEditingIncome(e)} className="bg-transparent border-none text-white/20 hover:text-orange-400 cursor-pointer p-1.5 rounded-lg hover:bg-orange-500/10 transition-all"><Pencil className="w-4 h-4" /></button>
+                              <button onClick={() => finance.removeIncome(e.id)} className="bg-transparent border-none text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all"><Trash2 className="w-4 h-4" /></button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                  })}
                 </div>
               );
             })()}
+          </CardContent>
+        </Card>
+      </>
+    )}
 
-            <div className="flex gap-2 flex-wrap">
-              {(["all", "pending", "paid"] as const).map(f => (
-                <button key={f} onClick={() => setStatusFilter(f)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer border ${statusFilter === f ? "bg-orange-500 border-orange-500 text-white" : "bg-white/[0.03] border-white/10 text-[#888] hover:text-white"}`}>
-                  {f === "all" ? "📋 Todos" : f === "pending" ? "⏳ Pendentes" : "✅ Pagos"}
-                </button>
-              ))}
-            </div>
+    {/* Conteúdo da sub-aba Análise de Gastos */}
+    {gastosSubTab === "analise" && (
+      <AIInsightCard
+        expenses={finance.expenses}
+        incomeEntries={finance.incomeEntries}
+        budgets={finance.budgets}
+        selectedMonth={selectedMonth}
+      />
+    )}
+  </div>
+)}
 
-            {finance.sortedByCategory.length > 0 && (
-              <Card className="bg-white/[0.03] border-white/[0.07]">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                    <PieIcon className="w-4 h-4 text-orange-500" /> Por Categoria
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {finance.sortedByCategory.map(c => (
-                    <div key={c.name}>
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs text-[#ccc] flex items-center gap-1.5">{c.icon} {c.name}</span>
-                        <span className="text-xs font-bold" style={{ color: c.color }}>{formatBRL(c.value)}</span>
-                      </div>
-                      <div className="bg-white/[0.07] rounded-full h-1.5 overflow-hidden">
-                        <div className="h-1.5 rounded-full transition-all duration-700" style={{ width: `${(c.value / finance.totalExpenses) * 100}%`, backgroundColor: c.color }} />
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                  <Receipt className="w-4 h-4 text-orange-500" />
-                  Lançamentos ({finance.filtered.length + finance.filteredIncomes.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {(() => {
-                  const expFiltered = finance.filtered.filter(e =>
-                    statusFilter === "all" ? true : statusFilter === "paid" ? e.status === "paid" : e.status !== "paid"
-                  );
-                  const incFiltered = finance.filteredIncomes.filter(e =>
-                    statusFilter === "all" ? true : statusFilter === "paid" ? e.status === "paid" : e.status !== "paid"
-                  );
-                  const allItems = [
-                    ...expFiltered.map(e => ({ ...e, _type: "expense" as const })),
-                    ...incFiltered.map(e => ({ ...e, _type: "income" as const })),
-                  ].sort((a, b) => +new Date(b.date) - +new Date(a.date));
-
-                  if (allItems.length === 0)
-                    return <p className="text-[#666] text-[13px] text-center py-4">Nenhum lançamento encontrado.</p>;
-
-                  return (
-                    <div className="space-y-0">
-                      {allItems.map(item => {
-                        if (item._type === "expense") {
-                          const e = item as Expense & { _type: "expense" };
-                          const cat = CATEGORIES.find(c => c.name === e.category);
-                          const isEditing = editingExpense?.id === e.id;
-                          const dueDateStatus = getDueDateStatus(e.due_date, e.status === "paid");
-
-                          return (
-                            <div key={`exp-${e.id}`} className="py-3.5 border-b border-white/[0.03] last:border-b-0">
-                              {isEditing && editingExpense ? (
-                                <div className="grid grid-cols-2 gap-2">
-                                  <input
-                                    className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500 placeholder:text-[#666]"
-                                    value={editingExpense.description}
-                                    onChange={ev => setEditingExpense({ ...editingExpense, description: ev.target.value })}
-                                    placeholder="Descrição"
-                                  />
-                                  <input
-                                    type="number"
-                                    className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500"
-                                    value={editingExpense.amount}
-                                    onChange={ev => setEditingExpense({ ...editingExpense, amount: parseFloat(ev.target.value) || 0 })}
-                                  />
-                                  <input
-                                    type="date"
-                                    className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500"
-                                    value={editingExpense.date}
-                                    onChange={ev => setEditingExpense({ ...editingExpense, date: ev.target.value })}
-                                  />
-                                  <input
-                                    type="date"
-                                    className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500"
-                                    value={editingExpense.due_date ?? ""}
-                                    onChange={ev => setEditingExpense({ ...editingExpense, due_date: ev.target.value || null })}
-                                    placeholder="Vencimento"
-                                  />
-                                  <select
-                                    className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500"
-                                    value={editingExpense.category}
-                                    onChange={ev => setEditingExpense({ ...editingExpense, category: ev.target.value })}
-                                  >
-                                    {CATEGORIES.map(c => <option key={c.name} value={c.name} className="bg-[#1a1a2e]">{c.icon} {c.name}</option>)}
-                                  </select>
-                                  <button onClick={() => { finance.updateExpense(editingExpense); setEditingExpense(null); }} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all">
-                                    <Check className="w-3 h-3" /> Salvar
-                                  </button>
-                                  <button onClick={() => setEditingExpense(null)} className="bg-white/5 text-[#888] border border-white/10 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-white/10 transition-all">
-                                    <X className="w-3 h-3" /> Cancelar
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-3">
-                                  <span className="text-xl">{cat?.icon}</span>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
-                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                      <p className="text-[#888] text-[11px] m-0">
-                                        {e.category} — {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
-                                      </p>
-                                      {e.status === "paid" ? (
-                                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-semibold">
-                                          <CheckCircle2 className="w-2.5 h-2.5" />
-                                          Pago{e.paid_at && ` — ${new Date(e.paid_at + "T00:00:00").toLocaleDateString("pt-BR")}`}
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 font-semibold">
-                                          <AlertTriangle className="w-2.5 h-2.5" /> Pendente
-                                        </span>
-                                      )}
-                                      {e.due_date && dueDateStatus && dueDateStatus !== "ok" && (
-                                        <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${
-                                          dueDateStatus === "overdue"
-                                            ? "bg-red-500/15 text-red-400 border-red-500/20"
-                                            : dueDateStatus === "due-today"
-                                              ? "bg-red-500/10 text-red-300 border-red-400/20"
-                                              : "bg-yellow-500/15 text-yellow-400 border-yellow-500/20"
-                                        }`}>
-                                          {getDueDateLabel(dueDateStatus, e.due_date)}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <span className="font-bold text-sm whitespace-nowrap" style={{ color: cat?.color || "#F97316" }}>
-                                    {formatBRL(e.amount)}
-                                  </span>
-                                  <button
-                                    onClick={() => finance.markAsPaid("expense", e.id, e.status !== "paid")}
-                                    title={e.status === "paid" ? "Desfazer pagamento" : "Marcar como pago"}
-                                    className={`p-1.5 rounded-lg transition-all cursor-pointer border ${e.status === "paid" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400" : "bg-white/5 border-white/10 text-white/30 hover:bg-emerald-500/10 hover:border-emerald-500/20 hover:text-emerald-400"}`}
-                                  >
-                                    <CheckCircle2 className="w-4 h-4" />
-                                  </button>
-                                  <button onClick={() => handleAttachClick("expense", e.id, e.attachment)} title={e.attachment ? "Ver comprovante" : "Anexar comprovante"} className="bg-transparent border-none text-white/20 hover:text-blue-400 cursor-pointer p-1.5 rounded-lg hover:bg-blue-500/10 transition-all">
-                                    <Paperclip className="w-4 h-4" />
-                                  </button>
-                                  <button onClick={() => setEditingExpense(e)} className="bg-transparent border-none text-white/20 hover:text-orange-400 cursor-pointer p-1.5 rounded-lg hover:bg-orange-500/10 transition-all">
-                                    <Pencil className="w-4 h-4" />
-                                  </button>
-                                  <button onClick={() => finance.removeExpense(e.id)} className="bg-transparent border-none text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all">
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        } else {
-                          const e = item as IncomeEntry & { _type: "income" };
-                          const isEditing = editingIncome?.id === e.id;
-                          return (
-                            <div key={`inc-${e.id}`} className="py-3.5 border-b border-white/[0.03] last:border-b-0">
-                              {isEditing && editingIncome ? (
-                                <div className="grid grid-cols-2 gap-2">
-                                  <input className="col-span-2 bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500 placeholder:text-[#666]" value={editingIncome.description} onChange={ev => setEditingIncome({ ...editingIncome, description: ev.target.value })} placeholder="Descrição" />
-                                  <input type="number" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.amount} onChange={ev => setEditingIncome({ ...editingIncome, amount: parseFloat(ev.target.value) || 0 })} />
-                                  <input type="date" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.date} onChange={ev => setEditingIncome({ ...editingIncome, date: ev.target.value })} />
-                                  <select className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-emerald-500" value={editingIncome.type} onChange={ev => setEditingIncome({ ...editingIncome, type: ev.target.value })}>
-                                    <option value="salario" className="bg-[#1a1a2e]">💼 Salário</option>
-                                    <option value="freelance" className="bg-[#1a1a2e]">💻 Freelance</option>
-                                    <option value="investimento" className="bg-[#1a1a2e]">📈 Investimento</option>
-                                    <option value="outro" className="bg-[#1a1a2e]">💰 Outro</option>
-                                  </select>
-                                  <button onClick={() => { finance.updateIncome(editingIncome); setEditingIncome(null); }} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all">
-                                    <Check className="w-3 h-3" /> Salvar
-                                  </button>
-                                  <button onClick={() => setEditingIncome(null)} className="bg-white/5 text-[#888] border border-white/10 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-white/10 transition-all">
-                                    <X className="w-3 h-3" /> Cancelar
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-3">
-                                  <span className="text-xl">💰</span>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
-                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                      <p className="text-[#888] text-[11px] m-0">
-                                        Receita — {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
-                                      </p>
-                                      {e.status === "paid" ? (
-                                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-semibold">
-                                          <CheckCircle2 className="w-2.5 h-2.5" /> Recebido
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 font-semibold">
-                                          <AlertTriangle className="w-2.5 h-2.5" /> A receber
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <span className="font-bold text-sm whitespace-nowrap text-emerald-400">+{formatBRL(e.amount)}</span>
-                                  <button onClick={() => finance.markAsPaid("income", e.id, e.status !== "paid")} title={e.status === "paid" ? "Desfazer recebimento" : "Marcar como recebido"} className={`p-1.5 rounded-lg transition-all cursor-pointer border ${e.status === "paid" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400" : "bg-white/5 border-white/10 text-white/30 hover:bg-emerald-500/10 hover:border-emerald-500/20 hover:text-emerald-400"}`}>
-                                    <CheckCircle2 className="w-4 h-4" />
-                                  </button>
-                                  <button onClick={() => handleAttachClick("income", e.id, e.attachment)} title={e.attachment ? "Ver comprovante" : "Anexar comprovante"} className="bg-transparent border-none text-white/20 hover:text-blue-400 cursor-pointer p-1.5 rounded-lg hover:bg-blue-500/10 transition-all">
-                                    <Paperclip className="w-4 h-4" />
-                                  </button>
-                                  <button onClick={() => setEditingIncome(e)} className="bg-transparent border-none text-white/20 hover:text-orange-400 cursor-pointer p-1.5 rounded-lg hover:bg-orange-500/10 transition-all">
-                                    <Pencil className="w-4 h-4" />
-                                  </button>
-                                  <button onClick={() => finance.removeIncome(e.id)} className="bg-transparent border-none text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all">
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        }
-                      })}
-                    </div>
-                  );
-                })()}
-              </CardContent>
-            </Card>
-          </div>
-        )}
 
         {/* ===== HISTÓRICO ===== */}
         {activeTab === "histórico" && (
@@ -2012,128 +2071,217 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
         )}
 
         {/* ===== INVESTIMENTOS ===== */}
-        {activeTab === "investimentos" && (
-          <div className="space-y-4">
-            <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/10">
-              <button onClick={() => setInvestTab("radar")} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${investTab === "radar" ? "bg-gradient-to-br from-purple-600 to-blue-500 text-white shadow-lg" : "text-[#888] hover:text-white"}`}>
-                <RadarIcon className="w-4 h-4" /> Radar de Mercado
-              </button>
-              <button onClick={() => setInvestTab("analise")} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${investTab === "analise" ? "bg-gradient-to-br from-purple-600 to-blue-500 text-white shadow-lg" : "text-[#888] hover:text-white"}`}>
-                <Zap className="w-4 h-4" /> Análise IA
-              </button>
-            </div>
+       {/* ===== INVESTIMENTOS ===== */}
+{activeTab === "investimentos" && (
+  <div className="space-y-5">
 
-            {investTab === "radar" && <RadarTab />}
+    {/* Card de input */}
+    <Card className="bg-white/[0.03] border-white/[0.07] overflow-hidden">
+      <div className="h-1 w-full bg-gradient-to-r from-purple-500 via-blue-500 to-cyan-500" />
+      <CardContent className="p-5">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-purple-500/20 flex items-center justify-center flex-shrink-0">
+            <TrendingUpIcon className="w-5 h-5 text-purple-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-white">Análise com IA</h3>
+            <p className="text-[#666] text-xs">Recomendações personalizadas em segundos</p>
+          </div>
+        </div>
 
-            {investTab === "analise" && (
-              <>
-                <Card className="bg-gradient-to-br from-purple-500/10 to-blue-500/10 border-purple-500/20">
-                  <CardContent className="p-4 sm:p-5">
-                    <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
-                      <TrendingUpIcon className="w-4 h-4 text-purple-400" /> Análise de Investimentos com IA
-                    </h3>
-                    <p className="text-[#888] text-xs mb-4">Informe o valor disponível e receba recomendações personalizadas.</p>
-                    <div className="flex gap-2">
-                      <input type="number" placeholder="Valor para investir (R$)" value={investmentValue} onChange={e => setInvestmentValue(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 flex-1 placeholder:text-[#666] transition-colors" />
-                      <button onClick={() => { const val = parseFloat(investmentValue); if (!isNaN(val) && val > 0) investments.analyze(val); }} disabled={investments.analyzing} className="bg-gradient-to-br from-purple-600 to-blue-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity cursor-pointer flex items-center gap-2 shadow-lg shadow-purple-500/20 disabled:opacity-60 whitespace-nowrap">
-                        {investments.analyzing ? <><Loader className="w-4 h-4 animate-spin" /> Analisando...</> : <><Zap className="w-4 h-4" /> Analisar</>}
-                      </button>
-                    </div>
-                    {investments.error && (
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mt-3 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                        <p className="text-red-400 text-sm m-0">{investments.error}</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#666] text-sm font-bold">R$</span>
+            <input
+              type="number"
+              placeholder="0,00"
+              value={investmentValue}
+              onChange={e => setInvestmentValue(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#444] transition-colors font-medium"
+            />
+          </div>
+          <button
+            onClick={() => { const val = parseFloat(investmentValue); if (!isNaN(val) && val > 0) investments.analyze(val); }}
+            disabled={investments.analyzing}
+            className="bg-gradient-to-br from-purple-600 to-blue-500 text-white font-bold rounded-xl px-5 py-3 text-sm hover:opacity-85 transition-opacity cursor-pointer flex items-center gap-2 shadow-lg shadow-purple-500/20 disabled:opacity-50 whitespace-nowrap"
+          >
+            {investments.analyzing
+              ? <><Loader className="w-4 h-4 animate-spin" /> Analisando...</>
+              : <><Zap className="w-4 h-4" /> Analisar</>}
+          </button>
+        </div>
 
-                {investments.analyses.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4 text-purple-400" /> Análises Recentes
-                      </h3>
-                      <button onClick={investments.clearHistory} className="text-xs text-[#888] hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer">
-                        <Trash2 className="w-3 h-3" /> Limpar histórico
-                      </button>
-                    </div>
-                    {investments.analyses.map(analysis => (
-                      <Card key={analysis.id} className="bg-white/[0.03] border-white/[0.07]">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <p className="text-white font-bold text-sm">{formatBRL(analysis.value)}</p>
-                              <p className="text-[#888] text-xs mt-0.5">{new Date(analysis.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
-                            </div>
-                            <button onClick={() => investments.deleteAnalysis(analysis.id)} className="text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                          {analysis.summary && (
-                            <div className="bg-white/[0.03] rounded-xl px-3.5 py-2.5 mb-3 flex items-start gap-2">
-                              <Lightbulb className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                              <p className="text-[#ccc] text-xs">{analysis.summary}</p>
-                            </div>
-                          )}
-                          <div className="space-y-2.5">
-                            {analysis.options.map((opt, i) => (
-                              <div key={i}>
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-xs flex items-center gap-1.5 font-medium text-[#ccc]">
-                                    <span>{opt.icon}</span>
-                                    {opt.label}
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${opt.risk === "baixo" ? "bg-emerald-500/20 text-emerald-400" : opt.risk === "médio" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}>
-                                      {opt.risk}
-                                    </span>
-                                  </span>
-                                  <div className="text-right">
-                                    <span className="font-bold text-xs text-white">{opt.percentage}%</span>
-                                    <span className="text-[#888] text-[10px] ml-1.5">{formatBRL(analysis.value * opt.percentage / 100)}</span>
-                                  </div>
-                                </div>
-                                <div className="bg-white/[0.07] rounded-full h-1.5 overflow-hidden">
-                                  <div className="h-1.5 rounded-full transition-all duration-700" style={{ width: `${opt.percentage}%`, backgroundColor: opt.color }} />
-                                </div>
-                                <p className="text-[#666] text-[10px] mt-1 leading-relaxed">{opt.justification}</p>
-                                {opt.expectedReturn && (
-                                  <p className="text-[#888] text-[10px]">Retorno esperado: <span className="text-emerald-400 font-semibold">{opt.expectedReturn}</span></p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                          {analysis.marketContext && (
-                            <div className="mt-3 pt-3 border-t border-white/[0.05] grid grid-cols-2 gap-2">
-                              <div className="bg-white/[0.03] rounded-lg px-3 py-2">
-                                <p className="text-[#888] text-[10px] uppercase tracking-wider">BTC</p>
-                                <p className="text-white font-bold text-xs mt-0.5">{formatBRL(analysis.marketContext.btcPrice)}</p>
-                              </div>
-                              <div className="bg-white/[0.03] rounded-lg px-3 py-2">
-                                <p className="text-[#888] text-[10px] uppercase tracking-wider">Sentimento</p>
-                                <p className={`font-bold text-xs mt-0.5 ${analysis.marketContext.sentiment === "bullish" ? "text-emerald-400" : analysis.marketContext.sentiment === "bearish" ? "text-red-400" : "text-yellow-400"}`}>
-                                  {analysis.marketContext.sentiment === "bullish" ? "🚀 Otimista" : analysis.marketContext.sentiment === "bearish" ? "🐻 Pessimista" : "⚖️ Neutro"}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    ))}
+        {investments.error && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mt-3 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+            <p className="text-red-400 text-sm m-0">{investments.error}</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+
+    {/* Análises */}
+    {investments.analyses.length > 0 && (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-xs font-bold text-[#888] uppercase tracking-wider flex items-center gap-2">
+            <BarChart3 className="w-3.5 h-3.5 text-purple-400" /> Análises Recentes
+          </h3>
+          <button
+            onClick={investments.clearHistory}
+            className="text-xs text-[#666] hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <Trash2 className="w-3 h-3" /> Limpar
+          </button>
+        </div>
+
+        {investments.analyses.map(analysis => (
+          <Card key={analysis.id} className="bg-white/[0.03] border-white/[0.07] overflow-hidden">
+            <CardContent className="p-0">
+
+              {/* Header do card */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.05]">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                    <PiggyBank className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div>
+                    <p className="text-white font-bold text-sm">{formatBRL(analysis.value)}</p>
+                    <p className="text-[#666] text-[10px]">
+                      {new Date(analysis.date).toLocaleDateString("pt-BR", {
+                        day: "2-digit", month: "short", year: "numeric",
+                        hour: "2-digit", minute: "2-digit"
+                      })}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => investments.deleteAnalysis(analysis.id)}
+                  className="text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4">
+
+                {/* Resumo IA */}
+                {analysis.summary && (
+                  <div className="flex items-start gap-2.5 bg-yellow-500/5 border border-yellow-500/10 rounded-xl px-3.5 py-2.5">
+                    <Lightbulb className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-[#bbb] text-xs leading-relaxed">{analysis.summary}</p>
                   </div>
                 )}
 
-                {investments.analyses.length === 0 && !investments.analyzing && (
-                  <Card className="bg-white/[0.03] border-white/[0.07]">
-                    <CardContent className="p-8 flex flex-col items-center text-center gap-3">
-                      <TrendingUpIcon className="w-10 h-10 text-purple-400/40" />
-                      <p className="text-[#888] text-sm">Nenhuma análise ainda. Informe um valor acima para começar.</p>
-                    </CardContent>
-                  </Card>
+                {/* Gráfico de pizza simples com barras */}
+                <div className="flex gap-1 h-2 rounded-full overflow-hidden">
+                  {analysis.options.map((opt, i) => (
+                    <div
+                      key={i}
+                      className="h-full transition-all duration-700 first:rounded-l-full last:rounded-r-full"
+                      style={{ width: `${opt.percentage}%`, backgroundColor: opt.color }}
+                      title={`${opt.label}: ${opt.percentage}%`}
+                    />
+                  ))}
+                </div>
+
+                {/* Opções */}
+                <div className="space-y-3">
+                  {analysis.options.map((opt, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      {/* Ícone colorido */}
+                      <div
+                        className="w-8 h-8 rounded-xl flex items-center justify-center text-sm flex-shrink-0 mt-0.5"
+                        style={{ backgroundColor: `${opt.color}18`, border: `1px solid ${opt.color}30` }}
+                      >
+                        {opt.icon}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold text-[#ddd]">{opt.label}</span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide ${
+                              opt.risk === "baixo"
+                                ? "bg-emerald-500/15 text-emerald-400"
+                                : opt.risk === "médio"
+                                ? "bg-yellow-500/15 text-yellow-400"
+                                : "bg-red-500/15 text-red-400"
+                            }`}>
+                              {opt.risk}
+                            </span>
+                          </div>
+                          <div className="text-right flex-shrink-0 ml-2">
+                            <span className="font-bold text-xs text-white">{opt.percentage}%</span>
+                            <span className="text-[#666] text-[10px] ml-1">{formatBRL(analysis.value * opt.percentage / 100)}</span>
+                          </div>
+                        </div>
+
+                        {/* Barra de progresso */}
+                        <div className="bg-white/[0.06] rounded-full h-1 overflow-hidden mb-1.5">
+                          <div
+                            className="h-1 rounded-full transition-all duration-700"
+                            style={{ width: `${opt.percentage}%`, backgroundColor: opt.color }}
+                          />
+                        </div>
+
+                        <p className="text-[#666] text-[10px] leading-relaxed">{opt.justification}</p>
+                        {opt.expectedReturn && (
+                          <p className="text-[#555] text-[10px] mt-0.5">
+                            Retorno: <span className="text-emerald-400 font-semibold">{opt.expectedReturn}</span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Contexto de mercado */}
+                {analysis.marketContext && (
+                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-white/[0.05]">
+                    <div className="bg-white/[0.03] rounded-xl px-3 py-2.5">
+                      <p className="text-[#555] text-[9px] uppercase tracking-wider font-medium mb-1">₿ Bitcoin</p>
+                      <p className="text-white font-bold text-xs">{formatBRL(analysis.marketContext.btcPrice)}</p>
+                    </div>
+                    <div className="bg-white/[0.03] rounded-xl px-3 py-2.5">
+                      <p className="text-[#555] text-[9px] uppercase tracking-wider font-medium mb-1">Sentimento</p>
+                      <p className={`font-bold text-xs ${
+                        analysis.marketContext.sentiment === "bullish" ? "text-emerald-400"
+                        : analysis.marketContext.sentiment === "bearish" ? "text-red-400"
+                        : "text-yellow-400"
+                      }`}>
+                        {analysis.marketContext.sentiment === "bullish" ? "🚀 Otimista"
+                          : analysis.marketContext.sentiment === "bearish" ? "🐻 Pessimista"
+                          : "⚖️ Neutro"}
+                      </p>
+                    </div>
+                  </div>
                 )}
-              </>
-            )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )}
+
+    {/* Estado vazio */}
+    {investments.analyses.length === 0 && !investments.analyzing && (
+      <Card className="bg-white/[0.03] border-white/[0.07]">
+        <CardContent className="p-10 flex flex-col items-center text-center gap-3">
+          <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/10 flex items-center justify-center">
+            <TrendingUpIcon className="w-8 h-8 text-purple-400/40" />
           </div>
-        )}
+          <div>
+            <p className="text-[#ccc] text-sm font-medium">Nenhuma análise ainda</p>
+            <p className="text-[#666] text-xs mt-1">Informe um valor acima e clique em Analisar</p>
+          </div>
+        </CardContent>
+      </Card>
+    )}
+
+  </div>
+)}
+
 
         {/* ===== PERFIL ===== */}
         {activeTab === "perfil" && (
@@ -2187,6 +2335,32 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
         </div>
       )}
 
+      {/* Modal preview de anexo */}
+{attachPreview && (
+  <div
+    className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[70] p-4"
+    onClick={() => setAttachPreview(null)}
+  >
+    <div
+      className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+      onClick={e => e.stopPropagation()}
+    >
+      <button
+        onClick={() => setAttachPreview(null)}
+        className="absolute -top-3 -right-3 w-8 h-8 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full flex items-center justify-center text-white transition-all cursor-pointer z-10"
+      >
+        <X className="w-4 h-4" />
+      </button>
+      <img
+        src={attachPreview.url}
+        alt="Comprovante"
+        className="max-w-full max-h-[85vh] rounded-xl object-contain shadow-2xl border border-white/10"
+      />
+      <p className="text-[#666] text-xs mt-3">Clique fora para fechar</p>
+    </div>
+  </div>
+)}
+
       {/* Input escondido para anexos */}
       <input type="file" ref={attachInputRef} onChange={handleAttachFileChange} accept="image/*,application/pdf" className="hidden" />
       {attachLoading && (
@@ -2215,7 +2389,7 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
         const saldo = totalReceitas - totalGastos;
 
         return (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="print-extrato fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="w-full max-w-[640px] max-h-[90vh] flex flex-col">
               <Card className="bg-[#0b0b14] border-white/[0.07] overflow-hidden flex flex-col max-h-[90vh]">
                 <CardHeader className="pb-2 flex-shrink-0">
@@ -2223,11 +2397,15 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
                     <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
                       <FileText className="w-4 h-4 text-orange-500" /> Extrato
                     </CardTitle>
-                    <button onClick={() => setShowExtrato(false)} className="text-[#888] hover:text-white transition-colors cursor-pointer">
+                    <button
+                       onClick={() => setShowExtrato(false)}
+                        className="no-print text-[#888] hover:text-white transition-colors cursor-pointer"
+                        >
                       <X className="w-4 h-4" />
                     </button>
+
                   </div>
-                  <div className="grid grid-cols-3 gap-2 mt-3">
+                  <div className="no-print grid grid-cols-3 gap-2 mt-3">
                     <select value={extratoMes} onChange={e => setExtratoMes(parseInt(e.target.value))} className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-2.5 py-2 text-xs outline-none focus:border-orange-500 cursor-pointer">
                       {MONTHS.map((m, i) => <option key={m} value={i} className="bg-[#0b0b14]">{m}</option>)}
                     </select>
