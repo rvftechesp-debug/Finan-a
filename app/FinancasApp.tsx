@@ -313,11 +313,7 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
     setLoading(false);
   }
 };
-<<<<<<< HEAD
-
-=======
->>>>>>> a362061 (feat: admin usuarios page)
-
+ 
   const handleRegister = async (e: React.FormEvent) => {
   e.preventDefault();
   setError(""); setSuccess("");
@@ -396,12 +392,8 @@ function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
     setLoading(false);
   }
 };
-HEAD
 
-
-a362061 (feat: admin usuarios page)
-
-  // ===================== FORGOT PASSWORD =====================
+// ===================== FORGOT PASSWORD =====================
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -766,15 +758,16 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
   } = useAuthMethods(user.id)
 
   const activeCount = totalAtivos
-<<<<<<< HEAD
   
-   const methodLabels: Record<Method, string> = {
-=======
+const methodLabels: Record<Method, string> = {
+  totp: '2FA (Autenticador)',
+  biometric: 'Biometria',
+  passkey: 'Face ID / Passkey',
+}
 
-  const handleToggleMethod = async (method: Method, active: boolean) => {
+const handleToggleMethod = async (method: Method, active: boolean) => {
   clearMessages()
 
-  // ✅ NOVO: Bloqueia ativação de TOTP sem secret configurado
   if (method === 'totp' && active && !user.totp_secret) {
     setError('O autenticador 2FA não está configurado. Contate o suporte ou recrie sua conta para gerar um novo QR Code.')
     setTimeout(() => setError(''), 5000)
@@ -794,12 +787,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     setTimeout(() => setSuccess(''), 3000)
   }
 }
-
-  const methodLabels: Record<Method, string> = {
->>>>>>> a362061 (feat: admin usuarios page)
-    totp: '2FA (Autenticador)',
-    biometric: 'Biometria',
-    passkey: 'Face ID / Passkey',
+ 
 }
   const handleToggleMethod = async (method: Method, active: boolean) => {
   const handleToggleMethod = async (method: Method, active: boolean) => {
