@@ -36,32 +36,41 @@ export function useInvestments(): UseInvestmentsReturn {
       try {
         const response = await fetch("/api/investments/analyze", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ value }),
         });
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || "Erro na análise");
+          console.error("Erro da API:", errorData);
+          throw new Error(errorData.details || errorData.error || "Erro na análise");
         }
 
         const result = await response.json();
+
+        const colors = ["#8B5CF6", "#3B82F6", "#10B981", "#F59E0B"];
+        const icons  = ["🏦", "📈", "🏛️", "₿"];
 
         const newAnalysis: InvestmentAnalysis = {
           id: `analysis-${Date.now()}`,
           value,
           date: new Date().toISOString(),
-          options: result.options,
           summary: result.summary,
           marketContext: result.marketContext,
+          options: result.options.map((opt: any, i: number) => ({
+            label:          opt.title,
+            percentage:     opt.allocation,
+            color:          colors[i] ?? "#888",
+            icon:           icons[i]  ?? "💰",
+            risk:           opt.risk,
+            justification:  opt.description,
+            expectedReturn: opt.return,
+          })),
         };
 
         setAnalyses((prev) => [newAnalysis, ...prev]);
       } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Erro desconhecido";
+        const errorMessage = err instanceof Error ? err.message : "Erro desconhecido";
         setError(errorMessage);
         console.error("Erro ao analisar investimento:", err);
       } finally {

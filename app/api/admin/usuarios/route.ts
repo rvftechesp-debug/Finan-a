@@ -20,9 +20,9 @@ async function checkAdmin() {
 
 export async function GET() {
   try {
-    const supabase = await checkAdmin();
+    await checkAdmin(); // só pra verificar permissão
 
-    const { data: users, error } = await supabase
+    const { data: users, error } = await supabaseAdmin
       .from('users')
       .select('id, username, email, plan, last_access, role, created_at')
       .order('created_at', { ascending: false });
@@ -34,6 +34,7 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 403 });
   }
 }
+
 
 export async function PUT(request: Request) {
   try {

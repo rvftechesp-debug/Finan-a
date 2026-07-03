@@ -14,20 +14,18 @@ interface User {
   created_at: string;
 }
 
-const PLANS = ['free', 'basic', 'premium', 'enterprise'];
-
-const PLAN_COLORS: Record<string, string> = {
-  free: 'from-gray-500/20 to-gray-600/20 border-gray-500/40 text-gray-400',
-  basic: 'from-blue-500/20 to-cyan-500/20 border-blue-400/40 text-blue-300',
-  premium: 'from-orange-500/20 to-amber-500/20 border-orange-400/40 text-orange-300',
-  enterprise: 'from-yellow-500/20 to-amber-400/20 border-yellow-400/40 text-yellow-300',
-};
+const PLANS = ['Pro', 'Plus', 'Master'];
 
 const PLAN_LABELS: Record<string, string> = {
-  free: 'FREE',
-  basic: 'BASIC',
-  premium: 'PREMIUM',
-  enterprise: 'ENTERPRISE',
+  Pro: 'PRO',
+  Plus: 'PLUS',
+  Master: 'MASTER',
+};
+
+const PLAN_COLORS: Record<string, string> = {
+  Pro: 'from-blue-500/20 to-cyan-500/20 border-blue-400/40 text-blue-300',
+  Plus: 'from-orange-500/20 to-amber-500/20 border-orange-400/40 text-orange-300',
+  Master: 'from-yellow-500/20 to-amber-400/20 border-yellow-400/40 text-yellow-300',
 };
 
 const AVATAR_COLORS = [
@@ -59,23 +57,35 @@ export default function AdminPage() {
   const [newPassword, setNewPassword] = useState('');
   const [activeMenu, setActiveMenu] = useState('usuarios');
 
- const loadUsers = async () => {
-  setLoading(true);
-  const res = await fetch('/api/admin/usuarios');
-  const data = await res.json();
-  if (Array.isArray(data)) setUsers(data);
-  setLoading(false);
-}; // 👈 fecha aqui o loadUsers
+const loadUsers = async () => {
+    setLoading(true);
+    console.log('🔵 loadUsers chamado');
+    
+    const res = await fetch('/api/admin/usuarios');
+    console.log('🟡 status da resposta:', res.status);
+    
+    const data = await res.json();
+    console.log('🟢 data recebido:', data);
+
+    if (Array.isArray(data)) {
+      console.log('✅ plans:', data.map(u => u.plan));
+      setUsers(data);
+    } else {
+      console.log('❌ data não é array:', data);
+    }
+    setLoading(false);
+  };
+
 
 useEffect(() => {
   loadUsers();
 }, []);
 
    const changePlan = async (id: string, plan: string) => {
-  const res = await fetch(`/api/admin/users/${id}/plan`, {
-    method: 'PATCH',
+  const res = await fetch('/api/admin/usuarios', {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plan }),
+    body: JSON.stringify({ id, plan }),
   });
   if (res.ok) loadUsers();
 };
@@ -119,10 +129,11 @@ useEffect(() => {
   };
 
   const stats = {
-    total: users.length,
-    ativos: users.filter((u) => u.role !== 'admin').length,
-    premium: users.filter((u) => ['premium', 'enterprise'].includes(u.plan)).length,
-  };
+  total: users.length,
+  ativos: users.filter((u) => u.role !== 'admin').length,
+  premium: users.filter((u) => ['Plus', 'Master', 'Pro'].includes(u.plan)).length,
+};
+
 
   if (loading)
     return (

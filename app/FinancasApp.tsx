@@ -42,6 +42,8 @@ import { SecurityMethodCard } from '@/components/SecurityMethodCard';
 import type { AuthMethod } from "@/app/hooks/useAuthMethods";
 import { useIsMobile } from '@/app/hooks/useIsMobile'
 import { AIInsightCard } from "@/components/AIInsightCard";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 
 // ===================== TIPOS =====================
@@ -743,10 +745,10 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
-  const isMobile = useIsMobile()
   const [success, setSuccess] = useState('')
-  const clearMessages = () => { setError(''); setSuccess('') }
+  const isMobile = useIsMobile()
   const [photoPreview, setPhotoPreview] = useState<string>(user.photo as string || '')
+
   useEffect(() => { setPhotoPreview(user.photo as string || '') }, [user.photo])
 
   const {
@@ -757,64 +759,37 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
     totalAtivos,
   } = useAuthMethods(user.id)
 
-  const activeCount = totalAtivos
-  
-const methodLabels: Record<Method, string> = {
-  totp: '2FA (Autenticador)',
-  biometric: 'Biometria',
-  passkey: 'Face ID / Passkey',
-}
+  const clearMessages = () => { setError(''); setSuccess('') }
 
-const handleToggleMethod = async (method: Method, active: boolean) => {
-  clearMessages()
-
-  if (method === 'totp' && active && !user.totp_secret) {
-    setError('O autenticador 2FA não está configurado. Contate o suporte ou recrie sua conta para gerar um novo QR Code.')
-    setTimeout(() => setError(''), 5000)
-    return
+  const methodLabels: Record<Method, string> = {
+    totp: '2FA (Autenticador)',
+    biometric: 'Biometria',
+    passkey: 'Face ID / Passkey',
   }
 
-  const err = await toggle(method, active)
-  if (err) {
-    setError(err)
-    setTimeout(() => setError(''), 4000)
-  } else {
-    setSuccess(
-      active
-        ? `${methodLabels[method]} ativado com sucesso!`
-        : `${methodLabels[method]} desativado.`
-    )
-    setTimeout(() => setSuccess(''), 3000)
-  }
-}
- 
-}
   const handleToggleMethod = async (method: Method, active: boolean) => {
-  const handleToggleMethod = async (method: Method, active: boolean) => {
-  clearMessages()
+    clearMessages()
 
-  // ✅ NOVO: Bloqueia ativação de TOTP sem secret configurado
-  if (method === 'totp' && active && !user.totp_secret) {
-    setError('O autenticador 2FA não está configurado. Contate o suporte ou recrie sua conta para gerar um novo QR Code.')
-    setTimeout(() => setError(''), 5000)
-    return
+    if (method === 'totp' && active && !user.totp_secret) {
+      setError('O autenticador 2FA não está configurado. Contate o suporte ou recrie sua conta para gerar um novo QR Code.')
+      setTimeout(() => setError(''), 5000)
+      return
+    }
+
+    const err = await toggle(method, active)
+    if (err) {
+      setError(err)
+      setTimeout(() => setError(''), 4000)
+    } else {
+      setSuccess(
+        active
+          ? `${methodLabels[method]} ativado com sucesso!`
+          : `${methodLabels[method]} desativado.`
+      )
+      setTimeout(() => setSuccess(''), 3000)
+    }
   }
 
-  const err = await toggle(method, active)
-  if (err) {
-    setError(err)
-    setTimeout(() => setError(''), 4000)
-  } else {
-    setSuccess(
-      active
-        ? `${methodLabels[method]} ativado com sucesso!`
-        : `${methodLabels[method]} desativado.`
-    )
-    setTimeout(() => setSuccess(''), 3000)
-  }
-}
-
-  
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -1023,76 +998,72 @@ const handleToggleMethod = async (method: Method, active: boolean) => {
       )}
 
       {tab === 'segurança' && (
-    <Card className="bg-white/[0.03] border-white/[0.07]">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-orange-500" /> Métodos de Autenticação
-        </CardTitle>
-        <p className="text-xs text-[#666] mt-1">
-          Escolha como deseja autenticar no login. Pelo menos{' '}
-          <strong className="text-orange-400">1 método</strong> deve permanecer ativo.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
-          totalAtivos >= 2
-            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-            : totalAtivos === 1
-            ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
-            : 'bg-red-500/10 border-red-500/20 text-red-400'
-        }`}>
-          {totalAtivos >= 2 ? (
-            <><CheckCircle2 className="w-3.5 h-3.5" /> {totalAtivos} métodos ativos — ótima segurança!</>
-          ) : totalAtivos === 1 ? (
-            <><AlertTriangle className="w-3.5 h-3.5" /> Apenas 1 método ativo — considere ativar mais.</>
-          ) : (
-            <><AlertTriangle className="w-3.5 h-3.5" /> Nenhum método ativo — ative pelo menos 1.</>
-          )}
-        </div>
+        <Card className="bg-white/[0.03] border-white/[0.07]">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-orange-500" /> Métodos de Autenticação
+            </CardTitle>
+            <p className="text-xs text-[#666] mt-1">
+              Escolha como deseja autenticar no login. Pelo menos{' '}
+              <strong className="text-orange-400">1 método</strong> deve permanecer ativo.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+              totalAtivos >= 2
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                : totalAtivos === 1
+                ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
+                : 'bg-red-500/10 border-red-500/20 text-red-400'
+            }`}>
+              {totalAtivos >= 2 ? (
+                <><CheckCircle2 className="w-3.5 h-3.5" /> {totalAtivos} métodos ativos — ótima segurança!</>
+              ) : totalAtivos === 1 ? (
+                <><AlertTriangle className="w-3.5 h-3.5" /> Apenas 1 método ativo — considere ativar mais.</>
+              ) : (
+                <><AlertTriangle className="w-3.5 h-3.5" /> Nenhum método ativo — ative pelo menos 1.</>
+              )}
+            </div>
 
-        {methodsLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader className="w-5 h-5 text-orange-500 animate-spin" />
-            <span className="text-[#666] text-sm ml-2">Carregando...</span>
-          </div>
-        ) : (
-          <>
-            {/* 2FA — sempre visível em qualquer dispositivo */}
-            <SecurityMethodCard
-              icon={ShieldCheck}
-              title="2FA — Autenticador"
-              description="Código de 6 dígitos via Google Authenticator ou similar"
-              badge="Recomendado"
-              badgeColor="bg-orange-500/10 border-orange-500/30 text-orange-400"
-              isActive={methods.totp}
-              isToggling={toggling === 'totp'}
-              disabled={methods.totp && totalAtivos === 1}
-              onToggle={(active) => handleToggleMethod('totp', active)}
-            />
-
-            
-
-            {/* Aviso no desktop */}
-            {!isMobile && (
-              <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3">
-                <p className="text-[#555] text-xs leading-relaxed">
-                  📱 Biometria e Face ID estão disponíveis apenas no celular.
-                  Acesse pelo dispositivo móvel para ativar esses métodos.
-                </p>
+            {methodsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader className="w-5 h-5 text-orange-500 animate-spin" />
+                <span className="text-[#666] text-sm ml-2">Carregando...</span>
               </div>
-            )}
-          </>
-        )}
+            ) : (
+              <>
+                <SecurityMethodCard
+                  icon={ShieldCheck}
+                  title="2FA — Autenticador"
+                  description="Código de 6 dígitos via Google Authenticator ou similar"
+                  badge="Recomendado"
+                  badgeColor="bg-orange-500/10 border-orange-500/30 text-orange-400"
+                  isActive={methods.totp}
+                  isToggling={toggling === 'totp'}
+                  disabled={methods.totp && totalAtivos === 1}
+                  onToggle={(active) => handleToggleMethod('totp', active)}
+                />
 
-        <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 mt-2">
-          <p className="text-[#555] text-xs leading-relaxed">
-            💡 Os métodos marcados ficam disponíveis como opção ao fazer login.
-            O último método ativo não pode ser desativado para garantir o acesso à conta.
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  )}
+                {!isMobile && (
+                  <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3">
+                    <p className="text-[#555] text-xs leading-relaxed">
+                      📱 Biometria e Face ID estão disponíveis apenas no celular.
+                      Acesse pelo dispositivo móvel para ativar esses métodos.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 mt-2">
+              <p className="text-[#555] text-xs leading-relaxed">
+                💡 Os métodos marcados ficam disponíveis como opção ao fazer login.
+                O último método ativo não pode ser desativado para garantir o acesso à conta.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
@@ -2374,7 +2345,41 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
         ].sort((a, b) => +new Date(b.date) - +new Date(a.date));
         const totalGastos = expenseItems.reduce((s, e) => s + e.amount, 0);
         const totalReceitas = incomeItems.reduce((s, e) => s + e.amount, 0);
+
         const saldo = totalReceitas - totalGastos;
+
+                const handleSalvarPDF = () => {
+          const doc = new jsPDF();
+
+          doc.setFontSize(16);
+          doc.text("Extrato Financeiro", 14, 18);
+          doc.setFontSize(10);
+          doc.setTextColor(100);
+          doc.text(`Mês: ${MONTHS[extratoMes]}`, 14, 25);
+
+          autoTable(doc, {
+            startY: 32,
+            head: [["Data", "Descrição", "Categoria", "Tipo", "Valor"]],
+            body: allItems.map((item) => [
+              new Date(item.date + "T00:00:00").toLocaleDateString("pt-BR"),
+              item.description,
+              item.category,
+              item._tipo,
+              `${item._tipo === "Receita" ? "+" : ""}${formatBRL(item.amount)}`,
+            ]),
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [249, 115, 22] },
+          });
+
+          const finalY = (doc as any).lastAutoTable.finalY + 10;
+          doc.setFontSize(10);
+          doc.setTextColor(0);
+          doc.text(`Total Gastos: ${formatBRL(totalGastos)}`, 14, finalY);
+          doc.text(`Total Receitas: ${formatBRL(totalReceitas)}`, 14, finalY + 6);
+          doc.text(`Saldo: ${formatBRL(saldo)}`, 14, finalY + 12);
+
+          doc.save(`extrato_${MONTHS[extratoMes]}.pdf`);
+        };
 
         return (
           <div className="print-extrato fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -2456,11 +2461,15 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
                     </div>
                   </div>
                 </CardContent>
-                <div className="px-4 pb-4 flex-shrink-0">
-                  <button onClick={() => window.print()} className="w-full bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-orange-500/20">
-                    <Printer className="w-4 h-4" /> Imprimir / Salvar PDF
+                 <div className="px-4 pb-4 flex-shrink-0 flex gap-2">
+                  <button onClick={() => window.print()} className="flex-1 bg-white/5 border border-white/10 text-[#ccc] hover:text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:bg-white/10 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                    <Printer className="w-4 h-4" /> Imprimir
+                  </button>
+                  <button onClick={handleSalvarPDF} className="flex-1 bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-orange-500/20">
+                    <FileText className="w-4 h-4" /> Salvar PDF
                   </button>
                 </div>
+
               </Card>
             </div>
           </div>

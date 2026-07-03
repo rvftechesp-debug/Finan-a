@@ -14,10 +14,11 @@ export async function POST(req: Request) {
   const options = await generateAuthenticationOptions({
     rpID: process.env.NEXT_PUBLIC_APP_DOMAIN!,
     userVerification: 'required',
-    allowCredentials: passkeys!.map(p => ({
-      id: p.credential_id,
-      type: 'public-key',
-    })),
+   allowCredentials: passkeys!.map((p: { credential_id: string }) => ({
+  id: p.credential_id,
+  type: 'public-key' as const,
+})),
+
   })
 
   await supabaseAdmin

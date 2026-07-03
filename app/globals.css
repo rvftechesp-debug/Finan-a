@@ -1,4 +1,7 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 
 :root {
   --background: #ffffff;
@@ -23,4 +26,28 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-extrato, .print-extrato * {
+    visibility: visible;
+  }
+  .print-extrato {
+    position: absolute;
+    inset: 0;
+    background: white !important;
+    padding: 20px;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-extrato table {
+    color: black !important;
+  }
+  .print-extrato th, .print-extrato td {
+    color: black !important;
+    border-color: #ccc !important;
+  }
 }
