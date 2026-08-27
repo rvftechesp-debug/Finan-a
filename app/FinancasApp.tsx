@@ -12,8 +12,9 @@ import {
   PiggyBank, LogIn, UserPlus, LogOut, Eye, EyeOff, Lock, User, Mail,
   PlusCircle, DollarSign, Settings, KeyRound, ShieldCheck, TrendingUpIcon, Zap, Loader,
   FileText, Printer, Paperclip, Phone, Fingerprint,
-  ScanFace
+  ScanFace, Bell
 } from "lucide-react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useFinance, CATEGORIES, MONTHS } from "@/app/hooks/useFinance";
@@ -22,10 +23,8 @@ import { formatBRL } from "@/app/utils/investmentUtils";
 import { compressImage } from "@/app/utils/imageCompression";
 import type { Expense } from "@/app/types";
 import { supabase } from "@/lib/supabase";
-import TwoFactorSetupModal from "@/components/TwoFactorSetupModal";
-import { generateTotpSecret, verifyTotpCode } from "@/lib/totp";
+import { generateTotpSecret, validateTotp } from "@/lib/totp";
 import TwoFactorLoginModal from "@/components/TwoFactorLoginModal";
-import PasskeyLoginModal from "@/components/PasskeyLoginModal";
 import {
   getEmailByUsername,
   getProfile,
@@ -37,13 +36,45 @@ import {
 import { RadarTab } from "@/components/RadarTab";
 import { Radar as RadarIcon } from "lucide-react";
 import type { IncomeEntry } from "@/app/hooks/useFinance";
-import { useAuthMethods } from '@/app/hooks/useAuthMethods';
-import { SecurityMethodCard } from '@/components/SecurityMethodCard';
-import type { AuthMethod } from "@/app/hooks/useAuthMethods";
 import { useIsMobile } from '@/app/hooks/useIsMobile'
 import { AIInsightCard } from "@/components/AIInsightCard";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { SuporteTab } from "@/components/SuporteTab";
+import { MessageSquare } from "lucide-react";
+import { Crown } from "lucide-react";
+import { ScoreFinanceiro } from "@/components/ScoreFinanceiro";
+import { AuthScreen } from "@/components/Authscreen";
+import { useNotifications } from "@/app/hooks/useNotifications";
+import { useSearchParams } from "next/navigation";
+import { GamificacaoTab } from "@/app/components/GamificacaoTab";
+import { useGamification } from "@/app/hooks/useGamification";
+import { Award } from "lucide-react";
+import { AchievementToast } from "@/app/components/AchievementToast";
+import { useSoundPreference } from "@/app/components/useSoundPreference";
+import { VolumeControl } from "@/app/components/VolumeControl";
+import { useAchievementSound } from "@/app/hooks/useSound";
+import { MuteFlash } from "@/app/components/MuteFlash";
+import CoinLoader from '@/components/CoinLoader';
+import { ResumoMensalIA } from "@/components/ResumoMensalIA";
+import { ContasTab } from "./components/ContasTab";
+import { useCustomCategories } from "@/app/hooks/useCustomCategories";
+import { CustomCategoryModal } from "@/components/CustomCategoryModal";
+
+
+
+// ===================== HELPER: REGISTRAR ACESSO =====================
+
+async function registrarAcesso(userId: string) {
+  try {
+    await supabase
+      .from('users')
+      .update({ last_access: new Date().toISOString() })
+      .eq('id', userId);
+  } catch (e) {
+    console.error('Falha ao registrar last_access:', e);
+  }
+}
 
 
 // ===================== TIPOS =====================
@@ -113,12 +144,13 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
 // ===================== COMPONENTES REUTILIZÁVEIS =====================
 
 const TabButton = ({
-  active, onClick, icon: Icon, label,
+  active, onClick, icon: Icon, label, badge,
 }: {
   active: boolean; onClick: () => void; icon: React.ElementType; label: string;
+  badge?: number;
 }) => (
   <button
-    className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
+    className={`relative flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
       active
         ? "bg-gradient-to-r from-orange-500/20 to-pink-500/20 text-white border border-orange-500/30"
         : "text-[#888] hover:text-[#ccc] hover:bg-white/5"
@@ -127,6 +159,11 @@ const TabButton = ({
   >
     <Icon className="w-4 h-4" />
     <span className="hidden sm:inline">{label}</span>
+    {badge != null && badge > 0 && (
+      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold shadow-md shadow-red-500/30">
+        {badge > 99 ? "99+" : badge}
+      </span>
+    )}
   </button>
 );
 
@@ -154,588 +191,13 @@ const StatCard = ({
   </Card>
 );
 
-// ===================== AUTH SCREEN =====================
-
-function AuthScreen({ onLogin }: { onLogin: (user: Profile) => void }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const [show2FAModal, setShow2FAModal] = useState(false);
-  const [totpSecret, setTotpSecret] = useState("");
-  const [pendingProfile, setPendingProfile] = useState<Profile | null>(null);
-
-  const [show2FALogin, setShow2FALogin] = useState(false);
-  const [pendingLoginProfile, setPendingLoginProfile] = useState<Profile | null>(null);
-
-  const [pendingTokens, setPendingTokens] = useState<{
-    access_token: string;
-    refresh_token: string;
-  } | null>(null);
-
-  const [showPasskeyLogin, setShowPasskeyLogin] = useState(false);
-
-  const [loginUser, setLoginUser] = useState("");
-  const [loginPass, setLoginPass] = useState("");
-
-  const [regName, setRegName] = useState("");
-  const [regPhone, setRegPhone] = useState("");
-  const [regEmail, setRegEmail] = useState("");
-  const [regUser, setRegUser] = useState("");
-  const [regPass, setRegPass] = useState("");
-  const [regConfirm, setRegConfirm] = useState("");
-
-  const [showForgot, setShowForgot] = useState(false);
-  const [forgotStep, setForgotStep] = useState<"form" | "success">("form");
-  const [forgotUser, setForgotUser] = useState("");
-  const [forgotNewPass, setForgotNewPass] = useState("");
-  const [forgotConfirmPass, setForgotConfirmPass] = useState("");
-  const [forgotTotpCode, setForgotTotpCode] = useState("");
-  const [forgotShowNew, setForgotShowNew] = useState(false);
-  const [forgotShowConfirm, setForgotShowConfirm] = useState(false);
-  const [forgotLoading, setForgotLoading] = useState(false);
-  const [forgotError, setForgotError] = useState("");
-  const [forgotSuccess, setForgotSuccess] = useState("");
-
-  const resetForgot = () => {
-    setShowForgot(false);
-    setForgotStep("form");
-    setForgotUser("");
-    setForgotNewPass("");
-    setForgotConfirmPass("");
-    setForgotTotpCode("");
-    setForgotError("");
-    setForgotSuccess("");
-  };
-
-  const handle2FASuccess = () => {
-    setShow2FAModal(false);
-    setSuccess("Conta criada com sucesso! 🎉");
-    if (pendingProfile) setTimeout(() => onLogin(pendingProfile), 600);
-  };
-
-  const handle2FALoginSuccess = () => {
-    setShow2FALogin(false);
-    setPendingTokens(null);
-    if (pendingLoginProfile) onLogin(pendingLoginProfile);
-  };
-
-  const handle2FALoginCancel = async () => {
-    await supabase.auth.signOut();
-    setShow2FALogin(false);
-    setPendingLoginProfile(null);
-    setPendingTokens(null);
-    setError("Verificação 2FA cancelada.");
-  };
-
-  const handlePasskeyLoginSuccess = () => {
-    setShowPasskeyLogin(false);
-    if (pendingLoginProfile) onLogin(pendingLoginProfile);
-  };
-
-  const handlePasskeyLoginCancel = async () => {
-    await supabase.auth.signOut();
-    setShowPasskeyLogin(false);
-    setPendingLoginProfile(null);
-    setError("Autenticação cancelada.");
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError("");
-  if (!loginUser.trim() || !loginPass.trim()) {
-    setError("Preencha usuário e senha");
-    return;
-  }
-  setLoading(true);
-  try {
-    const realEmail = await getEmailByUsername(loginUser.trim().toLowerCase());
-    if (!realEmail) { setError("Usuário não encontrado"); return; }
-
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email: realEmail,
-      password: loginPass.trim(),
-    });
-    if (authError || !data.user) { setError("Usuário ou senha incorretos"); return; }
-
-    const profile = await getProfile(data.user.id);
-    if (!profile) { setError("Perfil não encontrado. Contate o suporte."); return; }
-
-    const { data: authMethods } = await supabase
-      .from("user_auth_methods")
-      .select("method, is_active")
-      .eq("user_id", data.user.id);
-
-    const activeMethods = (authMethods ?? [])
-      .filter((m) => m.is_active)
-      .map((m) => m.method as AuthMethod);
-
-    const totpAtivoNaTabela = activeMethods.includes("totp");
-    const temSecret = !!profile.totp_secret;
-
-    // ✅ Caso 1: Tudo certo, pede 2FA normalmente
-    if (totpAtivoNaTabela && temSecret) {
-      setPendingLoginProfile(profile);
-      setPendingTokens({
-        access_token: data.session!.access_token,
-        refresh_token: data.session!.refresh_token,
-      });
-      setShow2FALogin(true);
-      return;
-    }
-
-    // ✅ Caso 2: Tem secret mas a tabela está dessincronizada — corrige e pede 2FA
-    if (!totpAtivoNaTabela && temSecret) {
-      await supabase.from('user_auth_methods').upsert(
-        {
-          user_id: data.user.id,
-          method: 'totp',
-          is_active: true,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,method', ignoreDuplicates: false }
-      );
-      setPendingLoginProfile(profile);
-      setPendingTokens({
-        access_token: data.session!.access_token,
-        refresh_token: data.session!.refresh_token,
-      });
-      setShow2FALogin(true);
-      return;
-    }
-
-    // ✅ Caso 3: Sem 2FA configurado, entra normalmente
-    onLogin(profile);
-
-  } catch {
-    setError("Erro ao conectar. Tente novamente.");
-  } finally {
-    setLoading(false);
-  }
-};
- 
-  const handleRegister = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError(""); setSuccess("");
-
-  if (!regName.trim())    { setError("Digite seu nome completo"); return; }
-  if (!regPhone.trim())   { setError("Digite seu celular"); return; }
-  if (!regEmail.trim())   { setError("Digite seu e-mail"); return; }
-  if (!regUser.trim())    { setError("Escolha um nome de usuário"); return; }
-  if (!regPass.trim())    { setError("Digite uma senha"); return; }
-  if (regPass.length < 6) { setError("A senha deve ter pelo menos 6 caracteres"); return; }
-  if (regPass !== regConfirm) { setError("As senhas não conferem"); return; }
-
-  setLoading(true);
-  try {
-    const emailExistente = await getEmailByUsername(regUser.trim().toLowerCase());
-    if (emailExistente) { setError("Este nome de usuário já está em uso"); return; }
-
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email: regEmail.trim().toLowerCase(),
-      password: regPass.trim(),
-    });
-
-    if (signUpError || !data.user) {
-      setError(signUpError?.message ?? "Erro ao criar conta. Tente novamente.");
-      return;
-    }
-
-    const novoProfile: Profile = {
-      id: data.user.id,
-      name: regName.trim(),
-      phone: regPhone.trim(),
-      username: regUser.trim().toLowerCase(),
-      email: regEmail.trim().toLowerCase(),
-      photo: "",
-      totp_secret: null,
-    };
-
-    const profileCriado = await createProfile(novoProfile.id, {
-      name: novoProfile.name,
-      phone: novoProfile.phone,
-      username: novoProfile.username,
-      email: novoProfile.email,
-      photo: "",
-      totp_secret: null,
-    });
-
-    if (!profileCriado) {
-      setError("Erro ao criar perfil. Tente novamente.");
-      return;
-    }
-
-    const secret = generateTotpSecret();
-    setTotpSecret(secret);
-    setPendingProfile(novoProfile);
-
-    // ✅ Salva o secret no profile
-    await updateProfile(novoProfile.id, { totp_secret: secret });
-
-    // ✅ NOVO: Cria o registro na user_auth_methods já como ativo
-    await supabase.from('user_auth_methods').upsert(
-      {
-        user_id: novoProfile.id,
-        method: 'totp',
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,method', ignoreDuplicates: false }
-    );
-
-    setShow2FAModal(true);
-
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Erro inesperado.";
-    setError(msg);
-  } finally {
-    setLoading(false);
-  }
-};
-
-// ===================== FORGOT PASSWORD =====================
-
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setForgotError("");
-    setForgotSuccess("");
-
-    if (!forgotUser.trim())       { setForgotError("Digite seu nome de usuário"); return; }
-    if (!forgotNewPass.trim())    { setForgotError("Digite a nova senha"); return; }
-    if (forgotNewPass.length < 6) { setForgotError("A senha deve ter pelo menos 6 caracteres"); return; }
-    if (forgotNewPass !== forgotConfirmPass) { setForgotError("As senhas não conferem"); return; }
-    if (forgotTotpCode.length !== 6) { setForgotError("Digite o código de 6 dígitos do autenticador"); return; }
-
-    setForgotLoading(true);
-    try {
-      // 1. Busca o profile pelo username diretamente no banco
-      const { data: profileRow, error: profileError } = await supabase
-  .from("users")
-  .select("id, totp_secret")
-  .eq("username", forgotUser.trim().toLowerCase())
-  .single();
-
-      if (profileError || !profileRow) {
-        setForgotError("Usuário não encontrado");
-        return;
-      }
-
-      if (!profileRow.totp_secret) {
-        setForgotError("Este usuário não possui autenticador 2FA configurado");
-        return;
-      }
-
-      // 2. Valida o código TOTP antes de qualquer ação
-      const valid = verifyTotpCode(profileRow.totp_secret, forgotTotpCode);
-if (!valid) {
-        setForgotError("Código 2FA inválido ou expirado. Tente novamente.");
-        return;
-      }
-
-      // 3. Chama a API Route server-side para trocar a senha com service_role
-      const res = await fetch("/api/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: profileRow.id,
-          newPassword: forgotNewPass.trim(),
-          totpCode: forgotTotpCode,
-          totpSecret: profileRow.totp_secret,
-        }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        setForgotError(json.error ?? "Erro ao redefinir senha. Tente novamente.");
-        return;
-      }
-
-      setForgotStep("success");
-      setForgotSuccess("Senha redefinida com sucesso! Faça login com a nova senha.");
-
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro inesperado";
-      setForgotError(msg);
-    } finally {
-      setForgotLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-[#0d0d1a] text-[#f0f0f0] font-sans flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-[420px]">
-
-        {/* Modal Esqueceu a Senha */}
-        {showForgot && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="w-full max-w-[400px]">
-              <Card className="bg-[#0d0d1a] border-white/[0.07] overflow-hidden">
-                <CardContent className="p-5 sm:p-6">
-                  <div className="flex items-center justify-between mb-5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-xl bg-orange-500/20 border border-orange-500/20 flex items-center justify-center">
-                        <KeyRound className="w-4 h-4 text-orange-500" />
-                      </div>
-                      <div>
-                        <h2 className="text-[15px] font-bold text-white m-0">Redefinir Senha</h2>
-                        <p className="text-[#666] text-xs m-0">Confirme com seu autenticador</p>
-                      </div>
-                    </div>
-                    <button onClick={resetForgot} className="text-[#888] hover:text-white transition-colors cursor-pointer">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                  {forgotError && (
-                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4 flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                      <p className="text-red-400 text-sm m-0">{forgotError}</p>
-                    </div>
-                  )}
-                  {forgotStep === "success" ? (
-                    <div className="space-y-4">
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                        <p className="text-emerald-400 text-sm m-0">{forgotSuccess}</p>
-                      </div>
-                      <button onClick={resetForgot} className="bg-white/5 border border-white/10 text-[#ccc] hover:text-white font-bold rounded-xl py-3 text-sm hover:bg-white/10 transition-all w-full cursor-pointer flex items-center justify-center gap-2">
-                        ← Voltar ao Login
-                      </button>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleForgotPassword} className="space-y-4">
-                      <div>
-                        <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Nome de Usuário</label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                          <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" placeholder="Digite seu usuário" value={forgotUser} onChange={e => setForgotUser(e.target.value)} autoFocus />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Nova Senha</label>
-                        <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                          <input type={forgotShowNew ? "text" : "password"} placeholder="Mínimo 6 caracteres" value={forgotNewPass} onChange={e => setForgotNewPass(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" />
-                          <button type="button" onClick={() => setForgotShowNew(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer transition-colors">
-                            {forgotShowNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Confirmar Nova Senha</label>
-                        <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                          <input type={forgotShowConfirm ? "text" : "password"} placeholder="Repita a nova senha" value={forgotConfirmPass} onChange={e => setForgotConfirmPass(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" />
-                          <button type="button" onClick={() => setForgotShowConfirm(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer transition-colors">
-                            {forgotShowConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Código do Autenticador (2FA)</label>
-                        <div className="relative">
-                          <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                          <input type="text" inputMode="numeric" maxLength={6} placeholder="000000" value={forgotTotpCode} onChange={e => setForgotTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors tracking-[0.3em] font-mono" />
-                        </div>
-                        <p className="text-[#555] text-xs mt-1.5">Abra o Google Authenticator e digite o código de 6 dígitos.</p>
-                      </div>
-                      <button type="submit" disabled={forgotLoading} className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl py-3 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 disabled:opacity-60">
-                        {forgotLoading ? <Loader className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                        Redefinir Senha
-                      </button>
-                    </form>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        )}
-
-        {/* Modal Setup 2FA (cadastro) */}
-        {show2FAModal && totpSecret && pendingProfile && (
-          <TwoFactorSetupModal
-            secret={totpSecret}
-            username={pendingProfile.username ?? ""}
-            onSuccess={handle2FASuccess}
-          />
-        )}
-
-        {/* Modal Login 2FA */}
-        {show2FALogin && pendingLoginProfile && pendingTokens && (
-          <TwoFactorLoginModal
-            access_token={pendingTokens.access_token}
-            refresh_token={pendingTokens.refresh_token}
-            onSuccess={handle2FALoginSuccess}
-            onCancel={handle2FALoginCancel}
-          />
-        )}
-
-        {/* Modal Passkey/Biometria */}
-        {showPasskeyLogin && pendingLoginProfile && (
-          <PasskeyLoginModal
-            userId={pendingLoginProfile.id}
-            onSuccess={handlePasskeyLoginSuccess}
-            onCancel={handlePasskeyLoginCancel}
-          />
-        )}
-
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 mb-4">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="RV Finanças" className="w-20 h-20 object-contain" />
-          </div>
-          <h1 className="text-3xl font-extrabold m-0 bg-gradient-to-br from-orange-500 to-pink-500 bg-clip-text text-transparent">RV Finanças</h1>
-          <p className="text-[#888] text-sm mt-2">Controle suas finanças de forma inteligente</p>
-        </div>
-
-        <Card className="bg-white/[0.03] border-white/[0.07] overflow-hidden">
-          <div className="flex border-b border-white/[0.07]">
-            <button
-              className={`flex-1 py-3.5 text-sm font-semibold transition-all cursor-pointer ${mode === "login" ? "text-white border-b-2 border-orange-500" : "text-[#888] hover:text-[#ccc]"}`}
-              onClick={() => { setMode("login"); setError(""); setSuccess(""); }}
-            >
-              <span className="flex items-center justify-center gap-2"><LogIn className="w-4 h-4" /> Entrar</span>
-            </button>
-            <button
-              className={`flex-1 py-3.5 text-sm font-semibold transition-all cursor-pointer ${mode === "register" ? "text-white border-b-2 border-orange-500" : "text-[#888] hover:text-[#ccc]"}`}
-              onClick={() => { setMode("register"); setError(""); setSuccess(""); }}
-            >
-              <span className="flex items-center justify-center gap-2"><UserPlus className="w-4 h-4" /> Cadastrar</span>
-            </button>
-          </div>
-          <CardContent className="p-5 sm:p-6">
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                <p className="text-red-400 text-sm m-0">{error}</p>
-              </div>
-            )}
-            {success && (
-              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 mb-4 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                <p className="text-emerald-400 text-sm m-0">{success}</p>
-              </div>
-            )}
-
-            {mode === "login" ? (
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Usuário</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input
-                      className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                      placeholder="Digite seu usuário"
-                      value={loginUser}
-                      onChange={e => setLoginUser(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs text-[#888] uppercase tracking-wider font-medium">Senha</label>
-                    <button type="button" onClick={() => setShowForgot(true)} className="text-xs text-orange-500 hover:text-orange-400 transition-colors cursor-pointer">
-                      Esqueceu a senha?
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input
-                      className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-10 py-3 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Digite sua senha"
-                      value={loginPass}
-                      onChange={e => setLoginPass(e.target.value)}
-                    />
-                    <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-white cursor-pointer transition-colors" onClick={() => setShowPassword(v => !v)}>
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl py-3 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 mt-2 disabled:opacity-60"
-                >
-                  {loading ? <Loader className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
-                  Acessar Dashboard
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleRegister} className="space-y-3">
-                <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Nome Completo</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" placeholder="Seu nome completo" value={regName} onChange={e => setRegName(e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Celular</label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" type="tel" placeholder="(11) 99999-9999" value={regPhone} onChange={e => setRegPhone(formatPhone(e.target.value))} maxLength={15} />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Email</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" type="email" placeholder="seu@email.com" value={regEmail} onChange={e => setRegEmail(e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Usuário</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" placeholder="Escolha um usuário" value={regUser} onChange={e => setRegUser(e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Senha</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" type="password" placeholder="Mínimo 6 caracteres" value={regPass} onChange={e => setRegPass(e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-[#888] uppercase tracking-wider font-medium mb-1.5 block">Confirmar Senha</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" />
-                    <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-orange-500 w-full placeholder:text-[#666] transition-colors" type="password" placeholder="Repita a senha" value={regConfirm} onChange={e => setRegConfirm(e.target.value)} />
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl py-3 text-sm hover:opacity-85 transition-opacity w-full cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 mt-2 disabled:opacity-60"
-                >
-                  {loading ? <Loader className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                  Criar Conta
-                </button>
-              </form>
-            )}
-          </CardContent>
-        </Card>
-
-        <p className="text-center text-[#666] text-xs mt-6">
-          🔒 Seus dados ficam salvos com segurança.{" "}
-          <span className="text-yellow-600">Não use senhas importantes aqui.</span>
-        </p>
-      </div>
-    </div>
-  );
-}
 
 // ===================== PERFIL PANEL =====================
 
 type Method = 'totp' | 'biometric' | 'passkey'
 
 function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => void }) {
-  const [tab, setTab] = useState<'foto' | 'email' | 'senha' | 'segurança'>('foto')
+  const [tab, setTab] = useState<'foto' | 'email' | 'senha'>('foto')
   const [newPhone, setNewPhone] = useState('')
   const [phonePass, setPhonePass] = useState('')
   const [currentPass, setCurrentPass] = useState('')
@@ -751,44 +213,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
 
   useEffect(() => { setPhotoPreview(user.photo as string || '') }, [user.photo])
 
-  const {
-    methods,
-    loading: methodsLoading,
-    toggling,
-    toggle,
-    totalAtivos,
-  } = useAuthMethods(user.id)
-
   const clearMessages = () => { setError(''); setSuccess('') }
-
-  const methodLabels: Record<Method, string> = {
-    totp: '2FA (Autenticador)',
-    biometric: 'Biometria',
-    passkey: 'Face ID / Passkey',
-  }
-
-  const handleToggleMethod = async (method: Method, active: boolean) => {
-    clearMessages()
-
-    if (method === 'totp' && active && !user.totp_secret) {
-      setError('O autenticador 2FA não está configurado. Contate o suporte ou recrie sua conta para gerar um novo QR Code.')
-      setTimeout(() => setError(''), 5000)
-      return
-    }
-
-    const err = await toggle(method, active)
-    if (err) {
-      setError(err)
-      setTimeout(() => setError(''), 4000)
-    } else {
-      setSuccess(
-        active
-          ? `${methodLabels[method]} ativado com sucesso!`
-          : `${methodLabels[method]} desativado.`
-      )
-      setTimeout(() => setSuccess(''), 3000)
-    }
-  }
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -860,7 +285,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
       </Card>
 
       <div className="flex gap-2 flex-wrap">
-        {(['foto', 'email', 'senha', 'segurança'] as const).map((t) => (
+        {(['foto', 'email', 'senha'] as const).map((t) => (
           <button
             key={t}
             onClick={() => { setTab(t); clearMessages() }}
@@ -873,7 +298,6 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
             {t === 'foto' && <><User className="w-4 h-4" /> Foto</>}
             {t === 'email' && <><Phone className="w-4 h-4" /> Alterar Celular</>}
             {t === 'senha' && <><KeyRound className="w-4 h-4" /> Alterar Senha</>}
-            {t === 'segurança' && <><ShieldCheck className="w-4 h-4" /> Segurança</>}
           </button>
         ))}
       </div>
@@ -914,7 +338,7 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
           </CardContent>
         </Card>
       )}
-
+       
       {tab === 'email' && (
         <Card className="bg-white/[0.03] border-white/[0.07]">
           <CardHeader className="pb-2">
@@ -996,77 +420,10 @@ function PerfilPanel({ user, onUpdate }: { user: User; onUpdate: (u: User) => vo
           </CardContent>
         </Card>
       )}
-
-      {tab === 'segurança' && (
-        <Card className="bg-white/[0.03] border-white/[0.07]">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-[15px] font-bold text-white flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-orange-500" /> Métodos de Autenticação
-            </CardTitle>
-            <p className="text-xs text-[#666] mt-1">
-              Escolha como deseja autenticar no login. Pelo menos{' '}
-              <strong className="text-orange-400">1 método</strong> deve permanecer ativo.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
-              totalAtivos >= 2
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                : totalAtivos === 1
-                ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
-                : 'bg-red-500/10 border-red-500/20 text-red-400'
-            }`}>
-              {totalAtivos >= 2 ? (
-                <><CheckCircle2 className="w-3.5 h-3.5" /> {totalAtivos} métodos ativos — ótima segurança!</>
-              ) : totalAtivos === 1 ? (
-                <><AlertTriangle className="w-3.5 h-3.5" /> Apenas 1 método ativo — considere ativar mais.</>
-              ) : (
-                <><AlertTriangle className="w-3.5 h-3.5" /> Nenhum método ativo — ative pelo menos 1.</>
-              )}
-            </div>
-
-            {methodsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader className="w-5 h-5 text-orange-500 animate-spin" />
-                <span className="text-[#666] text-sm ml-2">Carregando...</span>
-              </div>
-            ) : (
-              <>
-                <SecurityMethodCard
-                  icon={ShieldCheck}
-                  title="2FA — Autenticador"
-                  description="Código de 6 dígitos via Google Authenticator ou similar"
-                  badge="Recomendado"
-                  badgeColor="bg-orange-500/10 border-orange-500/30 text-orange-400"
-                  isActive={methods.totp}
-                  isToggling={toggling === 'totp'}
-                  disabled={methods.totp && totalAtivos === 1}
-                  onToggle={(active) => handleToggleMethod('totp', active)}
-                />
-
-                {!isMobile && (
-                  <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3">
-                    <p className="text-[#555] text-xs leading-relaxed">
-                      📱 Biometria e Face ID estão disponíveis apenas no celular.
-                      Acesse pelo dispositivo móvel para ativar esses métodos.
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-
-            <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 mt-2">
-              <p className="text-[#555] text-xs leading-relaxed">
-                💡 Os métodos marcados ficam disponíveis como opção ao fazer login.
-                O último método ativo não pode ser desativado para garantir o acesso à conta.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
-  )
+  );
 }
+
 
 // ===================== PASSWORD RESET SCREEN =====================
 
@@ -1144,6 +501,55 @@ function PasswordResetScreen({ user, onSuccess, onCancel }: { user: User; onSucc
   );
 }
 
+interface PlanGateProps {
+  allowed: boolean;
+  featureName: string;
+  requiredPlan: string;
+  children: React.ReactNode;
+}
+
+function PlanGate({ allowed, featureName, requiredPlan, children }: PlanGateProps) {
+  if (allowed) return <>{children}</>;
+
+  return (
+    <Card className="bg-white/[0.03] border-white/[0.07]">
+      <CardContent className="p-10 flex flex-col items-center text-center gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+          <Lock className="w-8 h-8 text-orange-500/60" />
+        </div>
+        <div>
+          <p className="text-white font-bold text-base mb-1">🔒 {featureName}</p>
+          <p className="text-[#888] text-sm">
+            Esta funcionalidade está disponível apenas no plano{" "}
+            <span className="text-orange-400 font-bold">{requiredPlan}</span> ou superior.
+          </p>
+        </div>
+        <div className="bg-gradient-to-br from-orange-500/10 to-pink-500/10 border border-orange-500/20 rounded-xl px-5 py-3 w-full max-w-xs">
+          <p className="text-xs text-[#888] mb-2">Faça upgrade para desbloquear</p>
+          <div className="flex items-center justify-center gap-2">
+            <Crown className="w-4 h-4 text-orange-400" />
+            <span className="text-orange-400 font-bold text-sm">Fazer Upgrade</span>
+          </div>
+        </div>
+        <div className="flex gap-3 text-xs text-[#555]">
+          {["Pro", "Plus", "Master"].map(p => (
+            <div key={p} className={`flex items-center gap-1 ${
+              p === requiredPlan || (requiredPlan === "Plus" && p === "Master")
+                ? "text-orange-400 font-semibold"
+                : "text-[#444] line-through"
+            }`}>
+              {p === requiredPlan || (requiredPlan === "Plus" && p === "Master")
+                ? "✅"
+                : "❌"
+              } {p}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ===================== DASHBOARD SCREEN =====================
 
 interface DashboardScreenProps {
@@ -1154,7 +560,20 @@ interface DashboardScreenProps {
 
 function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProps) {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-  const [activeTab, setActiveTab] = useState<string>("visão geral");
+ type Tab =
+  | "visão geral"
+  | "gastos"
+  | "investimentos"
+  | "histórico"
+  | "metas"
+  | "conquistas"
+  | "relatórios"
+  | "contas"        // ✅ adicionar
+  | "notificações"
+  | "suporte"
+  | "perfil";
+
+   const [activeTab, setActiveTab] = useState<Tab>("visão geral");
   const [showForm, setShowForm] = useState(false);
   const [editingBudget, setEditingBudget] = useState<string | null>(null);
   const [tempBudget, setTempBudget] = useState<number>(0);
@@ -1174,6 +593,10 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
   const [formDueDate, setFormDueDate] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [attachPreview, setAttachPreview] = useState<{ url: string; mime: string } | null>(null);
+  const { volume, setVolume, toggleMute, normalized, soundEnabled } = useSoundPreference();
+  const [showExpenseCatModal, setShowExpenseCatModal] = useState(false);
+  const [showIncomeCatModal, setShowIncomeCatModal] = useState(false);
+  const previewSound = useAchievementSound();
 
   const [userPhoto, setUserPhoto] = useState(user.photo || "");
   useEffect(() => { setUserPhoto(user.photo || ""); }, [user.photo]);
@@ -1195,8 +618,24 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
     date: `${currentYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`,
   });
 
+  const userPlan = (user as any).plan || 'Pro';
+  const canUseInvestmentAnalysis = ['Plus', 'Master'].includes(userPlan);
+  const canUseExpenseAnalysis = ['Master'].includes(userPlan);
+  
+
   const finance = useFinance(selectedMonth);
+  const customCats = useCustomCategories(user?.id ?? "guest");
+  const allExpenseCategories = [...CATEGORIES, ...customCats.customExpenseCategories];
+  const INCOME_TYPES = [
+    { name: "Salário", icon: "💼" },
+    { name: "Freelance", icon: "💻" },
+    { name: "Investimento", icon: "📈" },
+    { name: "Outro", icon: "💰" },
+  ];
+  const allIncomeCategories = [...INCOME_TYPES, ...customCats.customIncomeCategories];
+  const gamification = useGamification(finance.expenses, finance.incomeEntries);
   const investments = useInvestments();
+  const { notifications: adminNotifications, markAsRead } = useNotifications();
   const [investmentValue, setInvestmentValue] = useState("");
 
   useEffect(() => {
@@ -1222,6 +661,13 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
 
 const last3Months = lastNMonths(3);
 const last6Months = lastNMonths(6);
+
+const notifCount =
+  finance.expenses.filter(e => {
+    if (e.status === "paid" || !e.due_date) return false;
+    const st = getDueDateStatus(e.due_date, false);
+    return st && st !== "ok";
+  }).length + adminNotifications.length;
 
 const handleAttachFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
@@ -1323,40 +769,108 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
     return "text-red-500";
   };
 
-  const tabs = [
-    { id: "visão geral",   label: "Visão Geral",   icon: PieIcon },
-    { id: "gastos",        label: "Gastos",         icon: Receipt },
-    { id: "investimentos", label: "Investimentos",  icon: TrendingUpIcon },
-    { id: "histórico",     label: "Histórico",      icon: BarChart3 },
-    { id: "metas",         label: "Metas",          icon: Target },
-    { id: "relatórios",    label: "Relatórios",     icon: TrendingUp },
-  ];
+  const mainTabs = [
+  { id: "visão geral",   label: "Visão Geral",   icon: PieIcon },
+  { id: "gastos",        label: "Gastos",         icon: Receipt },
+  { id: "investimentos", label: "Investimentos",  icon: TrendingUpIcon },
+  { id: "histórico",     label: "Histórico",      icon: BarChart3 },
+  { id: "metas",         label: "Metas",          icon: Target },
+  { id: "conquistas",    label: "Conquistas",     icon: Award },  // ✅ nova
+  { id: "relatórios",    label: "Relatórios",     icon: TrendingUp },
+  { id: "contas", label: "Contas", icon: Wallet },
+];
 
-  return (
-    <div className="min-h-screen bg-[#0d0d1a] text-[#f0f0f0] font-sans">
-      <div className="max-w-[800px] mx-auto px-4 py-6">
+const secondaryTabs = [
+  { id: "notificações",  label: "Notificações",   icon: Bell },
+  { id: "suporte",       label: "Suporte",        icon: MessageSquare },
+];
+
+
+ return (
+  <div className="min-h-screen bg-[#0d0d1a] text-[#f0f0f0] font-sans">
+
+    {/* 🔔 Overlays flutuantes */}
+    <AchievementToast
+      achievements={gamification.newlyUnlocked}
+      onDismiss={gamification.dismissToast}
+      soundEnabled={soundEnabled}
+      volume={normalized}
+    />
+    <MuteFlash volume={volume} />
+
 
         {/* Header */}
+      <header className="...">
+        {/* ...botões... */}
+        <VolumeControl
+          volume={volume}
+          onChange={setVolume}
+          onPreview={(vol01) => previewSound(true, vol01)}
+        />
+      </header>
+
+   <div className="max-w-[1600px] mx-auto px-8 py-6">
+
+
+              {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center overflow-hidden flex-shrink-0">
               {userPhoto
-                // eslint-disable-next-line @next/next/no-img-element
                 ? <img src={String(userPhoto)} alt="Perfil" className="w-full h-full object-cover" />
                 : <User className="w-8 h-8 text-white" />}
             </div>
             <div>
               <h1 className="text-2xl sm:text-[28px] font-extrabold m-0 flex items-center gap-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/logo.png" alt="RV Finanças" className="w-9 h-9 sm:w-10 sm:h-10 object-contain" />
                 <span className="bg-gradient-to-br from-orange-500 to-pink-500 bg-clip-text text-transparent">RV Finanças</span>
               </h1>
               <div className="flex items-center gap-2 mt-1 relative" ref={profileMenuRef}>
-                <p className="text-[#888] text-[13px] m-0">Olá, <span className="text-orange-500 font-semibold">{user.name}</span>!</p>
+                <p className="text-[#888] text-[13px] m-0 flex items-center gap-2">
+                  Olá, <span className="text-orange-500 font-semibold">{user.name}</span>!
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
+                    userPlan === 'Master' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                    userPlan === 'Plus'   ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                    'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                  }`}>
+                    <Crown className="w-2.5 h-2.5" />
+                    {userPlan}
+                  </span>
+                </p>
                 <button onClick={() => setShowProfileMenu(v => !v)} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.03] text-[#888] hover:text-white hover:bg-white/[0.05] transition-colors text-sm">
                   <User className="w-4 h-4" />
                   <span className="hidden sm:inline">Perfil</span>
                 </button>
+
+                {/* ===== Abas Notificações e Suporte — ao lado do Perfil ===== */}
+                <button
+                  onClick={() => setActiveTab("notificações")}
+                  className={`relative inline-flex items-center gap-2 px-3 py-1 rounded-full transition-colors text-sm ${
+                    activeTab === "notificações"
+                      ? "bg-orange-500/20 text-orange-400"
+                      : "bg-white/[0.03] text-[#888] hover:text-white hover:bg-white/[0.05]"
+                  }`}
+                >
+                  <Bell className="w-4 h-4" />
+                  <span className="hidden sm:inline">Notificações</span>
+                  {notifCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                      {notifCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab("suporte")}
+                  className={`inline-flex items-center gap-2 px-3 py-1 rounded-full transition-colors text-sm ${
+                    activeTab === "suporte"
+                      ? "bg-orange-500/20 text-orange-400"
+                      : "bg-white/[0.03] text-[#888] hover:text-white hover:bg-white/[0.05]"
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span className="hidden sm:inline">Suporte</span>
+                </button>
+
                 {showProfileMenu && (
                   <div className="absolute left-0 top-full mt-2 w-44 bg-[#0b0b14] border border-white/[0.07] rounded-lg shadow-lg py-1 z-50">
                     <button onClick={() => { setActiveTab("perfil"); setShowProfileMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-white/5 flex items-center gap-2">
@@ -1370,28 +884,30 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-  <button
-    className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity flex items-center gap-2 cursor-pointer shadow-lg shadow-orange-500/20"
-    onClick={() => setShowForm(v => !v)}
-  >
-    <Plus className="w-4 h-4" /> Adicionar Gasto
-  </button>
-  <button
-    onClick={() => { setExtratoMes(selectedMonth); setShowExtrato(true); }}
-    className="bg-white/5 border border-white/10 text-[#ccc] hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-colors cursor-pointer flex items-center gap-2"
-  >
-    <FileText className="w-4 h-4" /> <span>Extrato</span>
-  </button>
-  <button
-    onClick={() => setModalAberto(true)}
-    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg transition-colors shadow-md cursor-pointer"
-  >
-    <PlusCircle className="w-4 h-4" /> <span>Adicionar Receita</span>
-  </button>
- </div>
-
         </div>
+
+        {/* Botões de ação — em cima do Período */}
+        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+          <button
+            className="bg-gradient-to-br from-orange-500 to-pink-500 text-white font-bold rounded-xl px-5 py-2.5 text-sm hover:opacity-85 transition-opacity flex items-center gap-2 cursor-pointer shadow-lg shadow-orange-500/20 whitespace-nowrap"
+            onClick={() => setShowForm(v => !v)}
+          >
+            <Plus className="w-4 h-4" /> Adicionar Gasto
+          </button>
+          <button
+            onClick={() => { setExtratoMes(selectedMonth); setShowExtrato(true); }}
+            className="bg-white/5 border border-white/10 text-[#ccc] hover:text-white hover:bg-white/10 px-4 py-2.5 rounded-xl transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap"
+          >
+            <FileText className="w-4 h-4" /> Extrato
+          </button>
+          <button
+            onClick={() => setModalAberto(true)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-xl transition-colors shadow-lg shadow-emerald-500/20 cursor-pointer whitespace-nowrap"
+          >
+            <PlusCircle className="w-4 h-4" /> Adicionar Receita
+          </button>
+        </div>
+
 
         {/* Month Selector */}
         <Card className="bg-white/[0.03] border-white/[0.07] mb-5 p-3">
@@ -1451,11 +967,15 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
                         <select
                           className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-orange-500 w-full cursor-pointer transition-colors"
                           value={form.category}
-                          onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                          onChange={e => {
+                            if (e.target.value === "__new__") { setShowExpenseCatModal(true); return; }
+                            setForm(f => ({ ...f, category: e.target.value }));
+                          }}
                         >
-                          {CATEGORIES.map(c => (
+                          {allExpenseCategories.map(c => (
                             <option key={c.name} value={c.name} className="bg-[#1a1a2e]">{c.icon} {c.name}</option>
                           ))}
+                          <option value="__new__" className="bg-[#1a1a2e]">⚙️ + Criar categoria...</option>
                         </select>
                         <input
                           className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-orange-500 w-full transition-colors"
@@ -1495,10 +1015,14 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
                             </option>
                           ))}
                         </select>
-                        <select className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full cursor-pointer transition-colors" value={cardForm.category} onChange={e => setCardForm(f => ({ ...f, category: e.target.value }))}>
-                          {CATEGORIES.map(c => (
+                        <select className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full cursor-pointer transition-colors" value={cardForm.category} onChange={e => {
+                          if (e.target.value === "__new__") { setShowExpenseCatModal(true); return; }
+                          setCardForm(f => ({ ...f, category: e.target.value }));
+                        }}>
+                          {allExpenseCategories.map(c => (
                             <option key={c.name} value={c.name} className="bg-[#1a1a2e]">{c.icon} {c.name}</option>
                           ))}
+                          <option value="__new__" className="bg-[#1a1a2e]">⚙️ + Criar categoria...</option>
                         </select>
                         <input className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 w-full transition-colors" type="date" value={cardForm.date} onChange={e => setCardForm(f => ({ ...f, date: e.target.value }))} />
                       </div>
@@ -1540,84 +1064,103 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex gap-1 mb-5 flex-wrap">
-          {tabs.map(t => (
-            <TabButton key={t.id} active={activeTab === t.id} onClick={() => setActiveTab(t.id)} icon={t.icon} label={t.label} />
-          ))}
-        </div>
+        {/* Tabs principais */}
+<div className="flex gap-1 mb-3 flex-wrap">
+  {mainTabs.map(t => (
+    <TabButton
+      key={t.id}
+      active={activeTab === t.id}
+      onClick={() => setActiveTab(t.id as Tab)}
+      icon={t.icon}
+      label={t.label}
+    />
+  ))}
+</div>
+
+
+
 
         {/* ===== VISÃO GERAL ===== */}
-        {activeTab === "visão geral" && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <StatCard title="Renda" value={formatBRL(finance.monthlyIncome)} color="#10B981" icon={PiggyBank} editable onEdit={() => setModalAberto(true)} />
-              <StatCard title="Gastos" value={formatBRL(finance.totalExpenses)} color="#F97316" icon={TrendingDown} />
-              <StatCard title="Saldo" value={formatBRL(finance.balance)} color={finance.balance >= 0 ? "#10B981" : "#EF4444"} icon={finance.balance >= 0 ? TrendingUp : TrendingDown} />
-              <StatCard title="Economia" value={`${finance.savingsRate.toFixed(1)}%`} color={finance.savingsRate >= 20 ? "#10B981" : finance.savingsRate >= 10 ? "#EAB308" : "#EF4444"} icon={Target} />
-            </div>
-            <Card className="bg-white/[0.03] border-white/[0.07]">
-              <CardContent className="p-4 sm:p-5">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-[13px] text-[#ccc] font-medium">Taxa de Economia</span>
-                  <span className={`font-bold ${getSavingsTextColor(finance.savingsRate)}`}>{finance.savingsRate.toFixed(1)}%</span>
-                </div>
-                <div className="bg-white/[0.07] rounded-full h-2.5 overflow-hidden">
-                  <div className={`h-2.5 rounded-full transition-all duration-700 ${getSavingsColor(finance.savingsRate)}`} style={{ width: `${Math.min(100, Math.max(0, finance.savingsRate))}%` }} />
-                </div>
-                <div className="flex items-center gap-2 mt-3">
-                  {finance.savingsRate >= 20
-                    ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    : <AlertTriangle className="w-4 h-4 text-yellow-500" />}
-                  <p className="text-[#888] text-xs">
-                    {finance.savingsRate >= 20
-                      ? "Excelente! Continue assim — você está economizando bem."
-                      : finance.savingsRate >= 10
-                        ? "Bom progresso, mas ainda dá para melhorar."
-                        : "Atenção: seus gastos estão altos. Tente reduzir."}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+{activeTab === "visão geral" && (
+  <div className="space-y-4">
 
-            {finance.tip && (
-              <Card className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border-yellow-500/20">
-                <CardContent className="p-4 flex items-start gap-3">
-                  <Lightbulb className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-yellow-300 font-semibold text-sm mb-1">💡 Dica Financeira</p>
-                    <p className="text-[#ccc] text-xs">
-                      Sua maior despesa é em <strong>{finance.tip.categoryName}</strong> ({finance.tip.icon}), representando{" "}
-                      <strong>{finance.tip.pct}%</strong> dos gastos. Reduzir 10% economizaria{" "}
-                      <strong>{formatBRL(finance.tip.savings)}</strong> este mês.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <StatCard title="Renda" value={formatBRL(finance.monthlyIncome)} color="#10B981" icon={PiggyBank} editable onEdit={() => setModalAberto(true)} />
+      <StatCard title="Gastos" value={formatBRL(finance.totalExpenses)} color="#F97316" icon={TrendingDown} />
+      <StatCard title="Saldo" value={formatBRL(finance.balance)} color={finance.balance >= 0 ? "#10B981" : "#EF4444"} icon={finance.balance >= 0 ? TrendingUp : TrendingDown} />
+      <StatCard title="Economia" value={`${finance.savingsRate.toFixed(1)}%`} color={finance.savingsRate >= 20 ? "#10B981" : finance.savingsRate >= 10 ? "#EAB308" : "#EF4444"} icon={Target} />
+    </div>
 
-            {finance.byCategoryFiltered.length > 0 && (
-              <Card className="bg-white/[0.03] border-white/[0.07]">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
-                    <PieIcon className="w-4 h-4 text-orange-500" /> Gastos por Categoria
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <PieChart>
-                      <Pie data={finance.byCategoryFiltered} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} paddingAngle={3} stroke="none">
-                        {finance.byCategoryFiltered.map((c, i) => <Cell key={i} fill={c.color} />)}
-                      </Pie>
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend formatter={(v) => <span className="text-[#ccc] text-xs">{v}</span>} wrapperStyle={{ fontSize: 12 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
+    {/* Taxa de Economia */}
+    <Card className="bg-white/[0.03] border-white/[0.07]">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-[13px] text-[#ccc] font-medium">Taxa de Economia</span>
+          <span className={`font-bold ${getSavingsTextColor(finance.savingsRate)}`}>{finance.savingsRate.toFixed(1)}%</span>
+        </div>
+        <div className="bg-white/[0.07] rounded-full h-2.5 overflow-hidden">
+          <div className={`h-2.5 rounded-full transition-all duration-700 ${getSavingsColor(finance.savingsRate)}`} style={{ width: `${Math.min(100, Math.max(0, finance.savingsRate))}%` }} />
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          {finance.savingsRate >= 20
+            ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            : <AlertTriangle className="w-4 h-4 text-yellow-500" />}
+          <p className="text-[#888] text-xs">
+            {finance.savingsRate >= 20
+              ? "Excelente! Continue assim — você está economizando bem."
+              : finance.savingsRate >= 10
+                ? "Bom progresso, mas ainda dá para melhorar."
+                : "Atenção: seus gastos estão altos. Tente reduzir."}
+          </p>
+           </div>
+      </CardContent>
+    </Card>
+                
+        {/* Gastos por Categoria */}
+    {finance.byCategoryFiltered.length > 0 && (
+      <Card className="bg-white/[0.03] border-white/[0.07]">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
+            <PieIcon className="w-4 h-4 text-orange-500" /> Gastos por Categoria
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={finance.byCategoryFiltered} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} paddingAngle={3} stroke="none">
+                {finance.byCategoryFiltered.map((c, i) => <Cell key={i} fill={c.color} />)}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+              <Legend formatter={(v) => <span className="text-[#ccc] text-xs">{v}</span>} wrapperStyle={{ fontSize: 12 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    )}
+
+    {/* Score Financeiro */}
+    <ScoreFinanceiro
+      monthlyIncome={finance.monthlyIncome}
+      totalExpenses={finance.totalExpenses}
+      savingsRate={finance.savingsRate}
+      expenses={finance.expenses}
+      incomeEntries={finance.incomeEntries}
+      budgetStatus={finance.budgetStatus}
+      selectedMonth={selectedMonth}
+    />
+  </div>
+)}
+        {activeTab === "conquistas" && (
+  <GamificacaoTab
+    achievements={gamification.achievements}
+    missions={gamification.missions}
+    unlockedCount={gamification.unlockedCount}
+    savingStreak={gamification.savingStreak}
+    totalSaved={gamification.totalSaved}
+  />
+)}
+
+
 
         {/* ===== GASTOS ===== */}
        {activeTab === "gastos" && (
@@ -1660,6 +1203,7 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
       <button
         onClick={() => setGastosSubTab("analise")}
         className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-all cursor-pointer border ${
+         
           gastosSubTab === "analise"
             ? "bg-purple-500/20 border-purple-500/30 text-white"
             : "bg-white/[0.03] border-white/10 text-[#888] hover:text-white"
@@ -1763,6 +1307,11 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
                                 <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
                                 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                   <p className="text-[#888] text-[11px] m-0">{e.category} — {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}</p>
+                                    {e.source && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-medium">
+                                     🏦 {e.source}
+                                      </span>
+                                      )}
                                   {e.status === "paid" ? (
                                     <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-semibold"><CheckCircle2 className="w-2.5 h-2.5" />Pago{e.paid_at && ` — ${new Date(e.paid_at + "T00:00:00").toLocaleDateString("pt-BR")}`}</span>
                                   ) : (
@@ -1810,6 +1359,11 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
                                 <p className="font-semibold text-sm m-0 truncate">{e.description}</p>
                                 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                   <p className="text-[#888] text-[11px] m-0">Receita — {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}</p>
+                                  {e.source && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20 font-semibold">
+                                  🏦 {e.source}
+                                   </span>
+                                    )}
                                   {e.status === "paid" ? (
                                     <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-semibold"><CheckCircle2 className="w-2.5 h-2.5" /> Recebido</span>
                                   ) : (
@@ -1837,21 +1391,38 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
     )}
 
     {/* Conteúdo da sub-aba Análise de Gastos */}
-    {gastosSubTab === "analise" && (
-      <AIInsightCard
-        expenses={finance.expenses}
-        incomeEntries={finance.incomeEntries}
-        budgets={finance.budgets}
-        selectedMonth={selectedMonth}
-      />
+      {gastosSubTab === "analise" && (
+      <PlanGate
+        allowed={canUseExpenseAnalysis}
+        featureName="Análise de Gastos com IA"
+        requiredPlan="Master"
+      >
+        <AIInsightCard
+          expenses={finance.expenses}
+          incomeEntries={finance.incomeEntries}
+          budgets={finance.budgets}
+          selectedMonth={selectedMonth}
+        />
+      </PlanGate>
     )}
   </div>
 )}
 
-
         {/* ===== HISTÓRICO ===== */}
         {activeTab === "histórico" && (
           <div className="space-y-4">
+            
+            {/* ===== Resumo Inteligente (topo) ===== */}
+    <ResumoMensalIA
+      selectedMonth={selectedMonth}
+      monthlyIncome={finance.monthlyIncome}
+      totalExpenses={finance.totalExpenses}
+      balance={finance.balance}
+      savingsRate={finance.savingsRate}
+      sortedByCategory={finance.sortedByCategory}
+      incomeVsExpenses={finance.incomeVsExpenses}
+    />
+
             <Card className="bg-white/[0.03] border-white/[0.07]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-bold text-[#ccc] flex items-center gap-2">
@@ -1898,6 +1469,7 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
               </CardContent>
             </Card>
           </div>
+          
         )}
 
         {/* ===== METAS ===== */}
@@ -2029,215 +1601,173 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
           </div>
         )}
 
-        {/* ===== INVESTIMENTOS ===== */}
-       {/* ===== INVESTIMENTOS ===== */}
-{activeTab === "investimentos" && (
+  {activeTab === "investimentos" && (
   <div className="space-y-5">
+    {/* Sub-abas radar/analise */}
+    <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/10">
+      <button onClick={() => setInvestTab("radar")} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${investTab === "radar" ? "bg-gradient-to-br from-purple-600 to-blue-500 text-white shadow-lg" : "text-[#888] hover:text-white"}`}>
+        <RadarIcon className="w-4 h-4" /> Radar de Mercado
+      </button>
+      <button onClick={() => setInvestTab("analise")} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${investTab === "analise" ? "bg-gradient-to-br from-purple-600 to-blue-500 text-white shadow-lg" : "text-[#888] hover:text-white"}`}>
+        <Zap className="w-4 h-4" /> Análise IA
+      </button>
+    </div>
 
-    {/* Card de input */}
-    <Card className="bg-white/[0.03] border-white/[0.07] overflow-hidden">
-      <div className="h-1 w-full bg-gradient-to-r from-purple-500 via-blue-500 to-cyan-500" />
-      <CardContent className="p-5">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-purple-500/20 flex items-center justify-center flex-shrink-0">
-            <TrendingUpIcon className="w-5 h-5 text-purple-400" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-white">Análise com IA</h3>
-            <p className="text-[#666] text-xs">Recomendações personalizadas em segundos</p>
-          </div>
-        </div>
+    {investTab === "radar" && <RadarTab />}
 
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#666] text-sm font-bold">R$</span>
-            <input
-              type="number"
-              placeholder="0,00"
-              value={investmentValue}
-              onChange={e => setInvestmentValue(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#444] transition-colors font-medium"
-            />
-          </div>
-          <button
-            onClick={() => { const val = parseFloat(investmentValue); if (!isNaN(val) && val > 0) investments.analyze(val); }}
-            disabled={investments.analyzing}
-            className="bg-gradient-to-br from-purple-600 to-blue-500 text-white font-bold rounded-xl px-5 py-3 text-sm hover:opacity-85 transition-opacity cursor-pointer flex items-center gap-2 shadow-lg shadow-purple-500/20 disabled:opacity-50 whitespace-nowrap"
-          >
-            {investments.analyzing
-              ? <><Loader className="w-4 h-4 animate-spin" /> Analisando...</>
-              : <><Zap className="w-4 h-4" /> Analisar</>}
-          </button>
-        </div>
+    {investTab === "analise" && (
+  <PlanGate
+    allowed={canUseInvestmentAnalysis}
+    featureName="Análise de Investimento com IA"
+    requiredPlan="Plus"
+  >
+    <>
+        <Card className="bg-white/[0.03] border-white/[0.07] overflow-hidden">
+          <div className="h-1 w-full bg-gradient-to-r from-purple-500 via-blue-500 to-cyan-500" />
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-purple-500/20 flex items-center justify-center flex-shrink-0">
+                <TrendingUpIcon className="w-5 h-5 text-purple-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Análise com IA</h3>
+                <p className="text-[#666] text-xs">Recomendações personalizadas em segundos</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#666] text-sm font-bold">R$</span>
+                <input
+                  type="number"
+                  placeholder="0,00"
+                  value={investmentValue}
+                  onChange={e => setInvestmentValue(e.target.value)}
+                  className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] pl-10 pr-4 py-3 text-sm outline-none focus:border-purple-500 w-full placeholder:text-[#444] transition-colors font-medium"
+                />
+              </div>
+              <button
+                onClick={() => { const val = parseFloat(investmentValue); if (!isNaN(val) && val > 0) investments.analyze(val); }}
+                disabled={investments.analyzing}
+                className="bg-gradient-to-br from-purple-600 to-blue-500 text-white font-bold rounded-xl px-5 py-3 text-sm hover:opacity-85 transition-opacity cursor-pointer flex items-center gap-2 shadow-lg shadow-purple-500/20 disabled:opacity-50 whitespace-nowrap"
+              >
+                {investments.analyzing
+                  ? <><Loader className="w-4 h-4 animate-spin" /> Analisando...</>
+                  : <><Zap className="w-4 h-4" /> Analisar</>}
+              </button>
+            </div>
+            {investments.error && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mt-3 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                <p className="text-red-400 text-sm m-0">{investments.error}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-        {investments.error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mt-3 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-            <p className="text-red-400 text-sm m-0">{investments.error}</p>
+        {investments.analyses.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-xs font-bold text-[#888] uppercase tracking-wider flex items-center gap-2">
+                <BarChart3 className="w-3.5 h-3.5 text-purple-400" /> Análises Recentes
+              </h3>
+              <button onClick={investments.clearHistory} className="text-xs text-[#666] hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer">
+                <Trash2 className="w-3 h-3" /> Limpar
+              </button>
+            </div>
+            {investments.analyses.map(analysis => (
+              <Card key={analysis.id} className="bg-white/[0.03] border-white/[0.07] overflow-hidden">
+                <CardContent className="p-0">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.05]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                        <PiggyBank className="w-4 h-4 text-purple-400" />
+                      </div>
+                      <div>
+                        <p className="text-white font-bold text-sm">{formatBRL(analysis.value)}</p>
+                        <p className="text-[#666] text-[10px]">
+                          {new Date(analysis.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={() => investments.deleteAnalysis(analysis.id)} className="text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {analysis.summary && (
+                      <div className="flex items-start gap-2.5 bg-yellow-500/5 border border-yellow-500/10 rounded-xl px-3.5 py-2.5">
+                        <Lightbulb className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-[#bbb] text-xs leading-relaxed">{analysis.summary}</p>
+                      </div>
+                    )}
+                    <div className="flex gap-1 h-2 rounded-full overflow-hidden">
+                      {analysis.options.map((opt, i) => (
+                        <div key={i} className="h-full transition-all duration-700 first:rounded-l-full last:rounded-r-full" style={{ width: `${opt.percentage}%`, backgroundColor: opt.color }} title={`${opt.label}: ${opt.percentage}%`} />
+                      ))}
+                    </div>
+                    <div className="space-y-3">
+                      {analysis.options.map((opt, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm flex-shrink-0 mt-0.5" style={{ backgroundColor: `${opt.color}18`, border: `1px solid ${opt.color}30` }}>
+                            {opt.icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-[#ddd]">{opt.label}</span>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide ${opt.risk === "baixo" ? "bg-emerald-500/15 text-emerald-400" : opt.risk === "médio" ? "bg-yellow-500/15 text-yellow-400" : "bg-red-500/15 text-red-400"}`}>{opt.risk}</span>
+                              </div>
+                              <div className="text-right flex-shrink-0 ml-2">
+                                <span className="font-bold text-xs text-white">{opt.percentage}%</span>
+                                <span className="text-[#666] text-[10px] ml-1">{formatBRL(analysis.value * opt.percentage / 100)}</span>
+                              </div>
+                            </div>
+                            <div className="bg-white/[0.06] rounded-full h-1 overflow-hidden mb-1.5">
+                              <div className="h-1 rounded-full transition-all duration-700" style={{ width: `${opt.percentage}%`, backgroundColor: opt.color }} />
+                            </div>
+                            <p className="text-[#666] text-[10px] leading-relaxed">{opt.justification}</p>
+                            {opt.expectedReturn && <p className="text-[#555] text-[10px] mt-0.5">Retorno: <span className="text-emerald-400 font-semibold">{opt.expectedReturn}</span></p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {analysis.marketContext && (
+                      <div className="grid grid-cols-2 gap-2 pt-3 border-t border-white/[0.05]">
+                        <div className="bg-white/[0.03] rounded-xl px-3 py-2.5">
+                          <p className="text-[#555] text-[9px] uppercase tracking-wider font-medium mb-1">₿ Bitcoin</p>
+                          <p className="text-white font-bold text-xs">{formatBRL(analysis.marketContext.btcPrice)}</p>
+                        </div>
+                        <div className="bg-white/[0.03] rounded-xl px-3 py-2.5">
+                          <p className="text-[#555] text-[9px] uppercase tracking-wider font-medium mb-1">Sentimento</p>
+                          <p className={`font-bold text-xs ${analysis.marketContext.sentiment === "bullish" ? "text-emerald-400" : analysis.marketContext.sentiment === "bearish" ? "text-red-400" : "text-yellow-400"}`}>
+                            {analysis.marketContext.sentiment === "bullish" ? "🚀 Otimista" : analysis.marketContext.sentiment === "bearish" ? "🐻 Pessimista" : "⚖️ Neutro"}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         )}
-      </CardContent>
-    </Card>
 
-    {/* Análises */}
-    {investments.analyses.length > 0 && (
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <h3 className="text-xs font-bold text-[#888] uppercase tracking-wider flex items-center gap-2">
-            <BarChart3 className="w-3.5 h-3.5 text-purple-400" /> Análises Recentes
-          </h3>
-          <button
-            onClick={investments.clearHistory}
-            className="text-xs text-[#666] hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer"
-          >
-            <Trash2 className="w-3 h-3" /> Limpar
-          </button>
-        </div>
-
-        {investments.analyses.map(analysis => (
-          <Card key={analysis.id} className="bg-white/[0.03] border-white/[0.07] overflow-hidden">
-            <CardContent className="p-0">
-
-              {/* Header do card */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.05]">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                    <PiggyBank className="w-4 h-4 text-purple-400" />
-                  </div>
-                  <div>
-                    <p className="text-white font-bold text-sm">{formatBRL(analysis.value)}</p>
-                    <p className="text-[#666] text-[10px]">
-                      {new Date(analysis.date).toLocaleDateString("pt-BR", {
-                        day: "2-digit", month: "short", year: "numeric",
-                        hour: "2-digit", minute: "2-digit"
-                      })}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => investments.deleteAnalysis(analysis.id)}
-                  className="text-white/20 hover:text-red-400 cursor-pointer p-1.5 rounded-lg hover:bg-red-500/10 transition-all"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+        {investments.analyses.length === 0 && !investments.analyzing && (
+          <Card className="bg-white/[0.03] border-white/[0.07]">
+            <CardContent className="p-10 flex flex-col items-center text-center gap-3">
+              <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/10 flex items-center justify-center">
+                <TrendingUpIcon className="w-8 h-8 text-purple-400/40" />
               </div>
-
-              <div className="p-4 space-y-4">
-
-                {/* Resumo IA */}
-                {analysis.summary && (
-                  <div className="flex items-start gap-2.5 bg-yellow-500/5 border border-yellow-500/10 rounded-xl px-3.5 py-2.5">
-                    <Lightbulb className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-[#bbb] text-xs leading-relaxed">{analysis.summary}</p>
-                  </div>
-                )}
-
-                {/* Gráfico de pizza simples com barras */}
-                <div className="flex gap-1 h-2 rounded-full overflow-hidden">
-                  {analysis.options.map((opt, i) => (
-                    <div
-                      key={i}
-                      className="h-full transition-all duration-700 first:rounded-l-full last:rounded-r-full"
-                      style={{ width: `${opt.percentage}%`, backgroundColor: opt.color }}
-                      title={`${opt.label}: ${opt.percentage}%`}
-                    />
-                  ))}
-                </div>
-
-                {/* Opções */}
-                <div className="space-y-3">
-                  {analysis.options.map((opt, i) => (
-                    <div key={i} className="flex items-start gap-3">
-                      {/* Ícone colorido */}
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-sm flex-shrink-0 mt-0.5"
-                        style={{ backgroundColor: `${opt.color}18`, border: `1px solid ${opt.color}30` }}
-                      >
-                        {opt.icon}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-semibold text-[#ddd]">{opt.label}</span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide ${
-                              opt.risk === "baixo"
-                                ? "bg-emerald-500/15 text-emerald-400"
-                                : opt.risk === "médio"
-                                ? "bg-yellow-500/15 text-yellow-400"
-                                : "bg-red-500/15 text-red-400"
-                            }`}>
-                              {opt.risk}
-                            </span>
-                          </div>
-                          <div className="text-right flex-shrink-0 ml-2">
-                            <span className="font-bold text-xs text-white">{opt.percentage}%</span>
-                            <span className="text-[#666] text-[10px] ml-1">{formatBRL(analysis.value * opt.percentage / 100)}</span>
-                          </div>
-                        </div>
-
-                        {/* Barra de progresso */}
-                        <div className="bg-white/[0.06] rounded-full h-1 overflow-hidden mb-1.5">
-                          <div
-                            className="h-1 rounded-full transition-all duration-700"
-                            style={{ width: `${opt.percentage}%`, backgroundColor: opt.color }}
-                          />
-                        </div>
-
-                        <p className="text-[#666] text-[10px] leading-relaxed">{opt.justification}</p>
-                        {opt.expectedReturn && (
-                          <p className="text-[#555] text-[10px] mt-0.5">
-                            Retorno: <span className="text-emerald-400 font-semibold">{opt.expectedReturn}</span>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Contexto de mercado */}
-                {analysis.marketContext && (
-                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-white/[0.05]">
-                    <div className="bg-white/[0.03] rounded-xl px-3 py-2.5">
-                      <p className="text-[#555] text-[9px] uppercase tracking-wider font-medium mb-1">₿ Bitcoin</p>
-                      <p className="text-white font-bold text-xs">{formatBRL(analysis.marketContext.btcPrice)}</p>
-                    </div>
-                    <div className="bg-white/[0.03] rounded-xl px-3 py-2.5">
-                      <p className="text-[#555] text-[9px] uppercase tracking-wider font-medium mb-1">Sentimento</p>
-                      <p className={`font-bold text-xs ${
-                        analysis.marketContext.sentiment === "bullish" ? "text-emerald-400"
-                        : analysis.marketContext.sentiment === "bearish" ? "text-red-400"
-                        : "text-yellow-400"
-                      }`}>
-                        {analysis.marketContext.sentiment === "bullish" ? "🚀 Otimista"
-                          : analysis.marketContext.sentiment === "bearish" ? "🐻 Pessimista"
-                          : "⚖️ Neutro"}
-                      </p>
-                    </div>
-                  </div>
-                )}
+              <div>
+                <p className="text-[#ccc] text-sm font-medium">Nenhuma análise ainda</p>
+                <p className="text-[#666] text-xs mt-1">Informe um valor acima e clique em Analisar</p>
               </div>
             </CardContent>
           </Card>
-        ))}
-      </div>
+        )}
+            </>
+    </PlanGate>
     )}
-
-    {/* Estado vazio */}
-    {investments.analyses.length === 0 && !investments.analyzing && (
-      <Card className="bg-white/[0.03] border-white/[0.07]">
-        <CardContent className="p-10 flex flex-col items-center text-center gap-3">
-          <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/10 flex items-center justify-center">
-            <TrendingUpIcon className="w-8 h-8 text-purple-400/40" />
-          </div>
-          <div>
-            <p className="text-[#ccc] text-sm font-medium">Nenhuma análise ainda</p>
-            <p className="text-[#666] text-xs mt-1">Informe um valor acima e clique em Analisar</p>
-          </div>
-        </CardContent>
-      </Card>
-    )}
-
   </div>
 )}
 
@@ -2247,7 +1777,142 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
           <PerfilPanel user={user} onUpdate={setCurrentUser} />
         )}
 
-      </div>
+        {/* ===== NOTIFICAÇÕES ===== */}
+{activeTab === "notificações" && (
+  <div className="space-y-3">
+    <Card className="bg-gradient-to-br from-orange-500/10 to-pink-500/10 border-orange-500/20">
+      <CardContent className="p-4 sm:p-5">
+        <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+          <Bell className="w-4 h-4 text-orange-500" /> Notificações
+        </h3>
+        <p className="text-[#888] text-xs">
+          Alertas de vencimentos, contas pendentes e lembretes financeiros.
+        </p>
+      </CardContent>
+    </Card>
+{/* Comunicados do Admin */}
+{adminNotifications.length > 0 && (
+  <div className="space-y-3">
+    <p className="text-[11px] uppercase tracking-wider text-[#666] font-bold px-1">
+      📢 Comunicados
+    </p>
+    {adminNotifications.map(n => (
+      <Card key={n.id} className="bg-white/[0.03] border-white/[0.07] hover:bg-white/[0.05] transition-all">
+        <CardContent className="p-4 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-500/25 flex items-center justify-center flex-shrink-0">
+            <Bell className="w-5 h-5 text-orange-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold text-sm text-white m-0">{n.title}</p>
+              {n.target_plan !== "all" && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30 uppercase">
+                  {n.target_plan}
+                </span>
+              )}
+            </div>
+            <p className="text-[#ccc] text-xs mt-1 leading-relaxed">{n.message}</p>
+            <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
+              <p className="text-[#555] text-[10px] m-0">
+                {new Date(n.created_at).toLocaleString("pt-BR")}
+              </p>
+              <button
+                onClick={() => markAsRead(n.id)}
+                className="text-[10px] px-3 py-1.5 rounded-full font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/25 transition-all cursor-pointer whitespace-nowrap"
+              >
+                ✓ Marcar como lida
+              </button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    ))}
+  </div>
+)}
+
+
+
+{/* Separador dos vencimentos */}
+{adminNotifications.length > 0 && (
+  <p className="text-[11px] uppercase tracking-wider text-[#666] font-bold px-1 pt-2">
+    📅 Vencimentos
+  </p>
+)}
+
+    {(() => {
+      // Gera notificações a partir dos gastos com vencimento
+      const notifs = finance.expenses
+        .filter(e => e.status !== "paid" && e.due_date)
+        .map(e => ({
+          ...e,
+          st: getDueDateStatus(e.due_date, false),
+        }))
+        .filter(n => n.st && n.st !== "ok")
+        .sort((a, b) => +new Date(a.due_date!) - +new Date(b.due_date!));
+
+      if (notifs.length === 0)
+        return (
+          <Card className="bg-white/[0.03] border-white/[0.07]">
+            <CardContent className="p-10 flex flex-col items-center text-center gap-3">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400/50" />
+              </div>
+              <div>
+                <p className="text-[#ccc] text-sm font-medium">Tudo em dia! 🎉</p>
+                <p className="text-[#666] text-xs mt-1">Nenhum vencimento pendente no momento.</p>
+              </div>
+            </CardContent>
+          </Card>
+        );
+
+      return notifs.map(n => {
+        const cat = CATEGORIES.find(c => c.name === n.category);
+        const color =
+          n.st === "overdue" ? "#EF4444"
+          : n.st === "due-today" ? "#F97316"
+          : "#EAB308";
+        return (
+          <Card key={n.id} className="bg-white/[0.03] border-white/[0.07] hover:bg-white/[0.05] transition-all">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: `${color}18`, border: `1px solid ${color}30` }}
+              >
+                {n.st === "overdue"
+                  ? <AlertTriangle className="w-5 h-5" style={{ color }} />
+                  : <CalendarDays className="w-5 h-5" style={{ color }} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm text-white m-0 truncate">
+                  {cat?.icon} {n.description}
+                </p>
+                <p className="text-xs m-0 mt-0.5" style={{ color }}>
+                  {getDueDateLabel(n.st!, n.due_date!)} — {formatBRL(n.amount)}
+                </p>
+              </div>
+              <button
+                onClick={() => finance.markAsPaid("expense", n.id, true)}
+                className="text-[10px] px-3 py-1.5 rounded-full font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/25 transition-all cursor-pointer whitespace-nowrap"
+              >
+                Marcar pago
+              </button>
+            </CardContent>
+          </Card>
+        );
+      });
+    })()} 
+</div>      
+      )}  
+
+      {/* ===== SUPORTE ===== */}
+{activeTab === "suporte" && (
+  <SuporteTab userId={user.id} />
+)}
+
+{/* ===== CONTAS ===== */}
+{activeTab === "contas" && (
+  <ContasTab finance={finance} />
+)}
 
       {/* Modal Adicionar Receita */}
       {modalAberto && (
@@ -2268,11 +1933,14 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                   <input type="text" placeholder="Descrição da receita" value={descReceita} onChange={e => setDescReceita(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full placeholder:text-[#666] transition-colors" />
                   <input type="number" step="0.01" placeholder="Valor (R$)" value={valorReceita} onChange={e => setValorReceita(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full placeholder:text-[#666] transition-colors" />
-                  <select value={catReceita} onChange={e => setCatReceita(e.target.value)} className="bg-[#1a1a2e] border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full cursor-pointer transition-colors">
-                    <option value="salario" className="bg-[#1a1a2e]">💼 Salário</option>
-                    <option value="freelance" className="bg-[#1a1a2e]">💻 Freelance</option>
-                    <option value="investimento" className="bg-[#1a1a2e]">📈 Investimento</option>
-                    <option value="outro" className="bg-[#1a1a2e]">💰 Outro</option>
+                  <select value={catReceita} onChange={e => {
+                    if (e.target.value === "__new__") { setShowIncomeCatModal(true); return; }
+                    setCatReceita(e.target.value);
+                  }} className="bg-[#1a1a2e] border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full cursor-pointer transition-colors">
+                    {allIncomeCategories.map(c => (
+                      <option key={c.name} value={c.name} className="bg-[#1a1a2e]">{c.icon} {c.name}</option>
+                    ))}
+                    <option value="__new__" className="bg-[#1a1a2e]">⚙️ + Criar categoria...</option>
                   </select>
                   <input type="date" value={dataReceita} onChange={e => setDataReceita(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl text-[#f0f0f0] px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 w-full transition-colors" />
                 </div>
@@ -2293,6 +1961,7 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
           </div>
         </div>
       )}
+        
 
       {/* Modal preview de anexo */}
 {attachPreview && (
@@ -2319,6 +1988,28 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
     </div>
   </div>
 )}
+
+      {/* Modais de categorias customizadas */}
+      {showExpenseCatModal && (
+        <CustomCategoryModal
+          type="expense"
+          existingCategories={CATEGORIES}
+          customCategories={customCats.customExpenseCategories}
+          onAdd={customCats.addExpenseCategory}
+          onRemove={customCats.removeExpenseCategory}
+          onClose={() => setShowExpenseCatModal(false)}
+        />
+      )}
+      {showIncomeCatModal && (
+        <CustomCategoryModal
+          type="income"
+          existingCategories={INCOME_TYPES}
+          customCategories={customCats.customIncomeCategories}
+          onAdd={customCats.addIncomeCategory}
+          onRemove={customCats.removeIncomeCategory}
+          onClose={() => setShowIncomeCatModal(false)}
+        />
+      )}
 
       {/* Input escondido para anexos */}
       <input type="file" ref={attachInputRef} onChange={handleAttachFileChange} accept="image/*,application/pdf" className="hidden" />
@@ -2475,13 +2166,14 @@ const handleAttachClick = (type: "expense" | "income", id: number, existingAttac
           </div>
         );
       })()}
+      </div>
     </div>
   );
 }
 
 // ===================== MAIN APP =====================
 
-export default function App() {
+export default function FinancasApp() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingSessionProfile, setPendingSessionProfile] = useState<User | null>(null);
@@ -2493,28 +2185,8 @@ export default function App() {
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [resetSessionProfile, setResetSessionProfile] = useState<User | null>(null);
   const initialCheckDone = useRef(false);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const profile = await getProfile(session.user.id);
-        if (profile) {
-          if (profile.totp_secret) {
-            setPendingSessionProfile(profile);
-            setPendingSessionTokens({
-              access_token: session.access_token,
-              refresh_token: session.refresh_token,
-            });
-            setShowSession2FA(true);
-          } else {
-            setCurrentUser(profile);
-          }
-        }
-      }
-      setLoading(false);
-      initialCheckDone.current = true;
-    });
-  }, []);
+  const searchParams = useSearchParams();
+  const isBlocked = searchParams.get("blocked") === "1";
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -2540,23 +2212,49 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const handleLogin = (user: User) => setCurrentUser(user);
+    useEffect(() => {
+    const init = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const profile = await getProfile(session.user.id);
+          if (profile) {
+            if (profile.totp_secret) {
+              setPendingSessionProfile(profile);
+              setPendingSessionTokens({
+                access_token: session.access_token,
+                refresh_token: session.refresh_token,
+              });
+              setShowSession2FA(true);
+            } else {
+              await registrarAcesso(profile.id);
+              setCurrentUser(profile);
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error("Erro na inicialização:", err?.message ?? err);
+      } finally {
+        setLoading(false);
+        initialCheckDone.current = true;
+      }
+    };
+    init();
+  }, []);
+
+
+    const handleLogin = (user: User) => {
+    registrarAcesso(user.id);
+    setCurrentUser(user);
+  };
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setCurrentUser(null);
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0d0d1a] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="RV Finanças" className="w-16 h-16 object-contain animate-pulse" />
-          <Loader className="w-6 h-6 text-orange-500 animate-spin" />
-        </div>
-      </div>
-    );
-  }
+  return <CoinLoader onFinish={() => {}} />;
+}
 
   if (showPasswordReset && resetSessionProfile) {
     return (
@@ -2586,6 +2284,7 @@ export default function App() {
             access_token={pendingSessionTokens.access_token}
             refresh_token={pendingSessionTokens.refresh_token}
             onSuccess={() => {
+              registrarAcesso(pendingSessionProfile.id);
               setCurrentUser(pendingSessionProfile);
               setShowSession2FA(false);
               setPendingSessionProfile(null);

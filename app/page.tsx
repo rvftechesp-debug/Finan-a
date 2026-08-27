@@ -1,6 +1,17 @@
-import FinancasApp from "@/app/FinancasApp";
-import { getDueDateStatus, getDueDateLabel } from "@/app/utils/dueDateStatus";
+"use client";
+
+import { Suspense } from "react";
+import dynamic from "next/dynamic";
+
+const FinancasApp = dynamic(() => import("@/app/FinancasApp"), {
+  ssr: false,
+  loading: () => <div>Carregando...</div>,
+});
 
 export default function Home() {
-  return <FinancasApp />;
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <FinancasApp />
+    </Suspense>
+  );
 }

@@ -28,5 +28,8 @@ export const getServerClient = createSupabaseServer;
 // Client admin com service_role (bypass RLS)
 export const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,  // <-- service role, NÃO a anon
+  {
+    auth: { autoRefreshToken: false, persistSession: false }
+  }
+)

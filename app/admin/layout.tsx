@@ -36,3 +36,4 @@ if (profile?.role !== 'admin') redirect('/')
 
   return <>{children}</>
 }
+

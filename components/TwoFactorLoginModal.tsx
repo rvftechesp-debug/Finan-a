@@ -1,4 +1,4 @@
-﻿// components/TwoFactorLoginModal.tsx
+// components/TwoFactorLoginModal.tsx
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
@@ -66,13 +66,15 @@ export default function TwoFactorLoginModal({
     setLoading(true)
 
     try {
-      const res = await fetch('/api/auth/2fa/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: fullCode, access_token, refresh_token }),
-      })
+      const res = await fetch('/api/auth/2fa/verify', {   // ? sem /setup
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ code: fullCode, access_token, refresh_token }),
+})
 
       const result = await res.json()
+console.log('Resposta do servidor:', res.status, result) // ? veja o result.error
+
 
       if (!res.ok || !result.verified) {
         setError(result.error ?? 'Código inválido ou expirado.')
@@ -95,7 +97,7 @@ export default function TwoFactorLoginModal({
     } finally {
       setLoading(false)
     }
-  } // ← fechamento do handleSubmit que estava faltando
+  } // ? fechamento do handleSubmit que estava faltando
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">

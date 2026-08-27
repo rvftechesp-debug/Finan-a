@@ -29,7 +29,9 @@ export interface IncomeEntry {
   status?: "pending" | "paid" | "canceled";
   due_date?: string | null;
   paid_at?: string | null;
+  source?: string | null;   // 👈 ADICIONAR
 }
+
 
 const defaultBudgets: Budget[] = CATEGORIES.map(c => ({
   category: c.name,
@@ -92,10 +94,10 @@ export function useFinance(selectedMonth?: number) {
               cardName:          e.card_name ?? undefined,
               installments:      e.installments ?? undefined,
               installmentNumber: e.installment_number ?? undefined,
-              // ✅ Campos de status e vencimento
               status:            e.status ?? "pending",
               due_date:          e.due_date ?? null,
               paid_at:           e.paid_at ?? null,
+              source:            e.source ?? null,
             }))
           );
         }
@@ -110,10 +112,10 @@ export function useFinance(selectedMonth?: number) {
               date:           e.date,
               attachment:     e.attachment ?? undefined,
               attachmentName: e.attachment_name ?? undefined,
-              // ✅ Campos de status e vencimento
               status:         e.status ?? "pending",
               due_date:       e.due_date ?? null,
               paid_at:        e.paid_at ?? null,
+              source:         e.source ?? null,
             }))
           );
         }
@@ -122,16 +124,16 @@ export function useFinance(selectedMonth?: number) {
           setBudgets(
             budRes.data.map(b => ({
               category: b.category,
-              limit:    Number(b.limit),
+              limit:    Number(b.budget_limit), // ✅ coluna renomeada
             }))
           );
         } else if (userId) {
           // Primeiro acesso: cria orçamentos padrão
           await supabase.from("budgets").insert(
             defaultBudgets.map(b => ({
-              user_id:  userId,
-              category: b.category,
-              limit:    b.limit,
+              user_id:      userId,
+              category:     b.category,
+              budget_limit: b.limit, // ✅ coluna renomeada
             }))
           );
         }
@@ -236,41 +238,50 @@ export function useFinance(selectedMonth?: number) {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  // ✅ CORRIGIDO — agora aceita e persiste due_date
   const addExpense = useCallback(async (form: {
     description: string;
     category: string;
     amount: string;
     date: string;
     due_date?: string | null;
+    source?: string | null;
   }) => {
     if (!userId || !form.description || !form.amount || isNaN(parseFloat(form.amount)))
       return false;
 
-    const newId = Date.now();
     const row = {
-      id:          newId,
-      user_id:     userId,
+      user_id: userId,
       description: form.description,
-      category:    form.category,
-      amount:      parseFloat(form.amount),
-      date:        form.date,
-      due_date:    form.due_date ?? null,  // ✅ persiste no banco
+      category: form.category,
+      amount: parseFloat(form.amount),
+      date: form.date,
+      due_date: form.due_date ?? null,
+      source: form.source ?? null,
     };
 
-    const { error } = await supabase.from("expenses").insert(row);
-    if (error) { console.error(error); return false; }
+    const { data, error } = await supabase
+      .from('expenses')
+      .insert(row)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro insert:", error.message, error.code);
+      return false;
+    }
 
     setExpenses(prev => [...prev, {
-      id:          newId,
+      id:          data.id,
       description: form.description,
       category:    form.category,
       amount:      parseFloat(form.amount),
       date:        form.date,
-      due_date:    form.due_date ?? null,  // ✅ atualiza estado local
+      due_date:    form.due_date ?? null,
       status:      "pending",
       paid_at:     null,
+      source:      form.source ?? null,
     }]);
+
     return true;
   }, [userId]);
 
@@ -279,16 +290,16 @@ export function useFinance(selectedMonth?: number) {
     setExpenses(prev => prev.filter(e => e.id !== id));
   }, [userId]);
 
-  // ✅ CORRIGIDO — agora persiste due_date no update
   const updateExpense = useCallback(async (updated: Expense) => {
     await supabase.from("expenses").update({
       description:     updated.description,
       category:        updated.category,
       amount:          updated.amount,
       date:            updated.date,
-      due_date:        updated.due_date ?? null,   // ✅ persiste no banco
+      due_date:        updated.due_date ?? null,
       attachment:      updated.attachment ?? null,
       attachment_name: updated.attachmentName ?? null,
+      source:            updated.source ?? null,
     }).eq("id", updated.id).eq("user_id", userId);
 
     setExpenses(prev => prev.map(e => e.id === updated.id ? updated : e));
@@ -298,19 +309,22 @@ export function useFinance(selectedMonth?: number) {
     amount: string,
     description = "Receita",
     type = "Salário",
-    date = new Date().toISOString().split("T")[0]
+    date = new Date().toISOString().split("T")[0],
+    source: string | null = null
   ) => {
     if (!userId || !amount || isNaN(parseFloat(amount))) return false;
 
-    const newId = Date.now();
     const value = parseFloat(amount);
 
-    const { error } = await supabase.from("incomes").insert({
-      id: newId, user_id: userId, description, type, amount: value, date,
-    });
-    if (error) { console.error(error); return false; }
+    const { data, error } = await supabase
+      .from("incomes")
+      .insert({ user_id: userId, description, type, amount: value, date, source })
+      .select()
+      .single();
 
-    setIncomeEntries(prev => [...prev, { id: newId, description, type, amount: value, date }]);
+    if (error) { console.error("Erro insert income:", error.message, error.code); return false; }
+
+    setIncomeEntries(prev => [...prev, { id: data.id, description, type, amount: value, date, source }]);
     return true;
   }, [userId]);
 
@@ -332,7 +346,6 @@ export function useFinance(selectedMonth?: number) {
     setIncomeEntries(prev => prev.map(e => e.id === updated.id ? updated : e));
   }, [userId]);
 
-  // ✅ markAsPaid — marca despesa ou receita como paga/pendente
   const markAsPaid = useCallback(async (
     type: "expense" | "income",
     id: number,
@@ -372,9 +385,13 @@ export function useFinance(selectedMonth?: number) {
     }
   }, [userId]);
 
+  // ✅ CORRIGIDO — usa budget_limit (não mais "limit", palavra reservada)
   const updateBudget = useCallback(async (category: string, limit: number) => {
     await supabase.from("budgets")
-      .upsert({ user_id: userId, category, limit }, { onConflict: "user_id,category" });
+      .upsert(
+        { user_id: userId, category, budget_limit: limit },
+        { onConflict: "user_id,category" }
+      );
 
     setBudgets(prev => prev.map(b => b.category === category ? { ...b, limit } : b));
   }, [userId]);
@@ -409,6 +426,6 @@ export function useFinance(selectedMonth?: number) {
     tip,
     CATEGORIES,
     MONTHS,
-    markAsPaid,  // ✅
+    markAsPaid,
   };
 }

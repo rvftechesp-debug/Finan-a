@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   getMarketData,
   getInvestmentRecommendationPrompt,
@@ -7,17 +7,17 @@ import {
 } from "@/app/utils/investmentUtils";
 
 const META: Record<string, { icon: string; label: string; color: string }> = {
-  rendaFixa: { icon: "💳", label: "Renda Fixa", color: "#3B82F6" },
-  rendaVariavel: { icon: "📊", label: "Renda Variável", color: "#A855F7" },
-  tesouroDireto: { icon: "🏛️", label: "Tesouro Direto", color: "#10B981" },
-  bitcoin: { icon: "₿", label: "Bitcoin", color: "#F59E0B" },
+  rendaFixa: { icon: "??", label: "Renda Fixa", color: "#3B82F6" },
+  rendaVariavel: { icon: "??", label: "Renda Variável", color: "#A855F7" },
+  tesouroDireto: { icon: "???", label: "Tesouro Direto", color: "#10B981" },
+  bitcoin: { icon: "?", label: "Bitcoin", color: "#F59E0B" },
 };
 
-// ✅ Recalcula amount sempre, ignorando o que o modelo retornou
+// ? Recalcula amount sempre, ignorando o que o modelo retornou
 function applyMeta(options: ReturnType<typeof generateRuleBasedAnalysis>["options"], value: number) {
   return options.map((opt) => ({
     ...opt,
-    amount: (value * opt.allocation) / 100, // ✅ nunca será NaN/0
+    amount: (value * opt.allocation) / 100, // ? nunca será NaN/0
     ...META[opt.type],
   }));
 }
@@ -101,12 +101,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ✅ Passa value e marketData para o fallback interno do parse
+    // ? Passa value e marketData para o fallback interno do parse
     const parsed = parseAnalysisResponse(analysisText, value, marketData);
 
     return NextResponse.json({
       summary: parsed.summary,
-      options: applyMeta(parsed.options, value), // ✅ recalcula amount
+      options: applyMeta(parsed.options, value), // ? recalcula amount
       marketContext: {
         btcPrice: marketData.btcPrice,
         sentiment: marketData.sentiment,

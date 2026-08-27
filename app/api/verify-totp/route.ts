@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { verifyTotpCode } from "@/lib/totp";
+import { validateTotp } from "@/lib/totp";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Perfil não encontrado" }, { status: 404 });
     }
 
-    const valid = verifyTotpCode(profile.totp_secret, totpCode);
+    const valid = validateTotp(profile.totp_secret, totpCode);
     if (!valid) {
       return NextResponse.json({ error: "Código inválido ou expirado" }, { status: 401 });
     }

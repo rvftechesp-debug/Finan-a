@@ -1,11 +1,12 @@
-﻿// @/components/TwoFactorSetupModal.tsx
+// @/components/TwoFactorSetupModal.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { generateOtpAuthUrl, verifyTotpCode } from "@/lib/totp";
+import { generateOtpAuthUrl } from "@/lib/totp";
 import { ShieldCheck, AlertTriangle, Loader, KeyRound, Copy, Check } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
 
 interface Props {
   secret: string;
@@ -48,29 +49,51 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
   };
 
   const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
+  e.preventDefault();
+  setError("");
 
-    const cleaned = code.replace(/\s/g, "");
-    if (cleaned.length !== 6 || !/^\d{6}$/.test(cleaned)) {
-      setError("Digite um código válido de 6 dígitos");
+  const cleaned = code.replace(/\s/g, "");
+  if (cleaned.length !== 6 || !/^\d{6}$/.test(cleaned)) {
+    setError("Digite um código válido de 6 dígitos");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setError("Sessão expirada. Faça login novamente.");
       return;
     }
 
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 600));
+    const res = await fetch('/api/auth/2fa/setup/verify', {  // ? adiciona /setup
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    code: cleaned,
+    secret,
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  }),
+});
 
-    const valid = verifyTotpCode(secret, cleaned);
-    setLoading(false);
+    const result = await res.json();
 
-    if (!valid) {
-      setError("Código inválido ou expirado. Tente novamente.");
+    if (!res.ok || !result.verified) {
+      setError(result.error ?? "Código inválido ou expirado.");
       setCode("");
       return;
     }
 
     onSuccess();
-  };
+  } catch {
+    setError("Erro inesperado. Tente novamente.");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -94,7 +117,7 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
           <div className="space-y-1.5 mb-5">
             {[
               "Abra o Google Authenticator no seu celular",
-              'Toque em "+" → "Escanear QR Code" ou "Inserir chave"',
+              'Toque em "+" ? "Escanear QR Code" ou "Inserir chave"',
               "Escaneie o QR Code ou cole o código copiado",
               "Digite o código de 6 dígitos gerado",
             ].map((step, i) => (
@@ -148,11 +171,11 @@ export default function TwoFactorSetupModal({ secret, username, onSuccess }: Pro
           </div>
 
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3 mb-5 flex items-start gap-2">
-            <span className="text-blue-400 text-base leading-none mt-0.5">💡</span>
+            <span className="text-blue-400 text-base leading-none mt-0.5">??</span>
             <p className="text-blue-300 text-xs m-0">
               <span className="font-semibold">Usando o celular?</span> Copie o código acima,
               abra o Google Authenticator, toque em{" "}
-              <span className="font-semibold">"+" → "Inserir chave de configuração"</span>{" "}
+              <span className="font-semibold">"+" ? "Inserir chave de configuração"</span>{" "}
               e cole o código.
             </p>
           </div>

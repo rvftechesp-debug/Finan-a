@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { verifyTotpCode } from "@/lib/totp";
+import { validateTotp } from "@/lib/totp";
 import { getProfile } from "@/lib/supabaseProfile";
 
 const supabaseAdmin = createClient(
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Perfil não encontrado" }, { status: 404 });
     }
 
-    const valid = verifyTotpCode(profile.totp_secret, totpCode);
+    const valid = validateTotp(profile.totp_secret, totpCode);
     if (!valid) {
       return NextResponse.json({ error: "Código 2FA inválido" }, { status: 401 });
     }

@@ -3,11 +3,13 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
+import CoinLoader from '@/components/CoinLoader' // 👈 1. IMPORT NOVO
 
 export default function Admin2FAPage() {
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showCoin, setShowCoin] = useState(false) // 👈 2. ESTADO DA MOEDA
   const router = useRouter()
 
   const handleVerify = async (e: React.FormEvent) => {
@@ -52,7 +54,13 @@ export default function Admin2FAPage() {
     sessionStorage.removeItem('pending_access_token')
     sessionStorage.removeItem('pending_refresh_token')
 
-    router.push('/admin')
+    console.log('🪙 LIGANDO A MOEDA!') // 👈 adiciona isso
+    setShowCoin(true)
+  }
+
+  if (showCoin) {
+    console.log('🪙 RENDERIZANDO COINLOADER') // 👈 e isso
+    return <CoinLoader onFinish={() => router.push('/admin')} />
   }
 
   return (

@@ -1,4 +1,4 @@
-﻿type Props = { icon: string; title: string };
+type Props = { icon: string; title: string };
 
 export function SectionTitle({ icon, title }: Props) {
   return (

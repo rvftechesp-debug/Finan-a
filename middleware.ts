@@ -1,53 +1,96 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { NextResponse, type NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
+import { NextResponse, type NextRequest } from 'next/server'
 
+// service role — ignora RLS
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request: { headers: request.headers } });
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  )
+  let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
+        getAll() {
+          return request.cookies.getAll()
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({ name, value, ...options });
-          response = NextResponse.next({ request: { headers: request.headers } });
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({ name, value: '', ...options });
-          response = NextResponse.next({ request: { headers: request.headers } });
-          response.cookies.set({ name, value: '', ...options });
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          )
+          supabaseResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
         },
       },
     }
-  );
+  )
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // 👇 MUDANÇA 1: captura o erro de auth
+const { data: { user }, error: userError } = await supabase.auth.getUser()
+const pathname = request.nextUrl.pathname
 
-  // Protege todas as rotas /admin
-  if (request.nextUrl.pathname.startsWith('/admin')) {
+// 👇 MUDANÇA 2: loga erro de token
+if (userError) {
+  console.log('MW AUTH ERROR:', userError.message)
+}
+
+// 🚫 BLOQUEIO GLOBAL — vale para qualquer rota
+if (user) {
+  const { data: blockedCheck } = await supabaseAdmin
+    .from('users')
+    .select('blocked')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (blockedCheck?.blocked && !pathname.startsWith('/api')) {
+    await supabase.auth.signOut()
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    url.searchParams.set('blocked', '1')
+    return NextResponse.redirect(url)
+  }
+}
+
+const isPublic = pathname === '/' || pathname.startsWith('/api')
+
+if (!user && !isPublic) {
+  const url = request.nextUrl.clone()
+  url.pathname = '/'
+  return NextResponse.redirect(url)
+}
+
+// /admin exige role admin
+  if (pathname.startsWith('/admin')) {
     if (!user) {
-      return NextResponse.redirect(new URL('/login', request.url));
+      const url = request.nextUrl.clone()
+      url.pathname = '/'
+      return NextResponse.redirect(url)
     }
 
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
       .from('users')
       .select('role')
       .eq('id', user.id)
-      .single();
+      .maybeSingle()
 
     if (profile?.role !== 'admin') {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
+      const url = request.nextUrl.clone()
+      url.pathname = '/'
+      return NextResponse.redirect(url)
     }
   }
 
-  return response;
+  return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
-};
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+}
+

@@ -12,6 +12,7 @@ export interface Expense {
   cardName?: string;
   installments?: number;
   installmentNumber?: number;
+  source?: string | null; 
 }
 
 export interface Income {
