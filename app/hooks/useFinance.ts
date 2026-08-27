@@ -316,15 +316,17 @@ export function useFinance(selectedMonth?: number) {
 
     const value = parseFloat(amount);
 
+    const paidAt = new Date().toISOString().split("T")[0];
+
     const { data, error } = await supabase
       .from("incomes")
-      .insert({ user_id: userId, description, type, amount: value, date, source })
+      .insert({ user_id: userId, description, type, amount: value, date, source, status: "paid", paid_at: paidAt })
       .select()
       .single();
 
     if (error) { console.error("Erro insert income:", error.message, error.code); return false; }
 
-    setIncomeEntries(prev => [...prev, { id: data.id, description, type, amount: value, date, source }]);
+    setIncomeEntries(prev => [...prev, { id: data.id, description, type, amount: value, date, source, status: "paid", paid_at: paidAt }]);
     return true;
   }, [userId]);
 
