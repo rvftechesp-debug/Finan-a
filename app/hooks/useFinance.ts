@@ -43,7 +43,14 @@ async function getCurrentUserId(): Promise<string | null> {
   return data.session?.user?.id ?? null;
 }
 
-export function useFinance(selectedMonth?: number) {
+export interface CustomCategory {
+  name: string;
+  icon: string;
+  color: string;
+}
+
+export function useFinance(selectedMonth?: number, customExpenseCategories: CustomCategory[] = []) {
+  const allCategories = [...CATEGORIES, ...customExpenseCategories];
   const [userId, setUserId] = useState<string | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
@@ -178,7 +185,7 @@ export function useFinance(selectedMonth?: number) {
   const byCategory = useMemo(() => {
     const map: Record<string, number> = {};
     filtered.forEach(e => { map[e.category] = (map[e.category] || 0) + e.amount; });
-    return CATEGORIES.map(c => ({ ...c, value: map[c.name] || 0 }));
+    return allCategories.map(c => ({ ...c, value: map[c.name] || 0 }));
   }, [filtered]);
 
   const byCategoryFiltered = useMemo(() =>
@@ -215,13 +222,13 @@ export function useFinance(selectedMonth?: number) {
   );
 
   const budgetStatus = useMemo(() =>
-    CATEGORIES.map(c => {
+    allCategories.map(c => {
       const spent  = byCategory.find(b => b.name === c.name)?.value || 0;
       const budget = budgets.find(b => b.category === c.name)?.limit || 0;
       const pct    = budget > 0 ? (spent / budget) * 100 : 0;
       return { ...c, spent, budget, pct };
     }),
-    [byCategory, budgets]
+    [byCategory, budgets, allCategories]
   );
 
   const getTip = useCallback(() => {
@@ -316,17 +323,15 @@ export function useFinance(selectedMonth?: number) {
 
     const value = parseFloat(amount);
 
-    const paidAt = new Date().toISOString().split("T")[0];
-
     const { data, error } = await supabase
       .from("incomes")
-      .insert({ user_id: userId, description, type, amount: value, date, source, status: "paid", paid_at: paidAt })
+      .insert({ user_id: userId, description, type, amount: value, date, source })
       .select()
       .single();
 
     if (error) { console.error("Erro insert income:", error.message, error.code); return false; }
 
-    setIncomeEntries(prev => [...prev, { id: data.id, description, type, amount: value, date, source, status: "paid", paid_at: paidAt }]);
+    setIncomeEntries(prev => [...prev, { id: data.id, description, type, amount: value, date, source }]);
     return true;
   }, [userId]);
 

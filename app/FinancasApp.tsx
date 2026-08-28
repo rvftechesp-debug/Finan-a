@@ -623,9 +623,9 @@ function DashboardScreen({ user, onLogout, setCurrentUser }: DashboardScreenProp
   const canUseExpenseAnalysis = ['Master'].includes(userPlan);
   
 
-  const finance = useFinance(selectedMonth);
   const customCats = useCustomCategories(user?.id ?? "guest");
   const allExpenseCategories = [...CATEGORIES, ...customCats.customExpenseCategories];
+  const finance = useFinance(selectedMonth, customCats.customExpenseCategories);
   const INCOME_TYPES = [
     { name: "Salário", icon: "💼" },
     { name: "Freelance", icon: "💻" },
@@ -1295,7 +1295,7 @@ const secondaryTabs = [
                               <input type="date" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.date} onChange={ev => setEditingExpense({ ...editingExpense, date: ev.target.value })} />
                               <input type="date" className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.due_date ?? ""} onChange={ev => setEditingExpense({ ...editingExpense, due_date: ev.target.value || null })} />
                               <select className="col-span-2 bg-[#1a1a2e] border border-white/10 rounded-lg text-[#f0f0f0] px-3 py-2 text-sm outline-none focus:border-orange-500" value={editingExpense.category} onChange={ev => setEditingExpense({ ...editingExpense, category: ev.target.value })}>
-                                {CATEGORIES.map(c => <option key={c.name} value={c.name} className="bg-[#1a1a2e]">{c.icon} {c.name}</option>)}
+                                {allExpenseCategories.map(c => <option key={c.name} value={c.name} className="bg-[#1a1a2e]">{c.icon} {c.name}</option>)}
                               </select>
                               <button onClick={() => { finance.updateExpense(editingExpense); setEditingExpense(null); }} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-emerald-500/30 transition-all"><Check className="w-3 h-3" /> Salvar</button>
                               <button onClick={() => setEditingExpense(null)} className="bg-white/5 text-[#888] border border-white/10 rounded-lg py-1.5 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer hover:bg-white/10 transition-all"><X className="w-3 h-3" /> Cancelar</button>
@@ -2095,7 +2095,7 @@ const secondaryTabs = [
                     </select>
                     <select value={extratoFiltroCategoria} onChange={e => setExtratoFiltroCategoria(e.target.value)} className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-2.5 py-2 text-xs outline-none focus:border-orange-500 cursor-pointer">
                       <option value="todas" className="bg-[#0b0b14]">Todas categorias</option>
-                      {CATEGORIES.map(c => <option key={c.name} value={c.name} className="bg-[#0b0b14]">{c.icon} {c.name}</option>)}
+                      {allExpenseCategories.map(c => <option key={c.name} value={c.name} className="bg-[#0b0b14]">{c.icon} {c.name}</option>)}
                     </select>
                     <select value={extratoFiltroTipo} onChange={e => setExtratoFiltroTipo(e.target.value as "ambos" | "gastos" | "receitas")} className="bg-white/5 border border-white/10 rounded-lg text-[#f0f0f0] px-2.5 py-2 text-xs outline-none focus:border-orange-500 cursor-pointer">
                       <option value="ambos" className="bg-[#0b0b14]">Gastos e Receitas</option>
