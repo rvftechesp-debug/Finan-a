@@ -1282,7 +1282,7 @@ const secondaryTabs = [
                   {allItems.map(item => {
                     if (item._type === "expense") {
                       const e = item as Expense & { _type: "expense" };
-                      const cat = CATEGORIES.find(c => c.name === e.category);
+                      const cat = allExpenseCategories.find(c => c.name === e.category);
                       const isEditing = editingExpense?.id === e.id;
                       const dueDateStatus = getDueDateStatus(e.due_date, e.status === "paid");
 
@@ -1866,7 +1866,7 @@ const secondaryTabs = [
         );
 
       return notifs.map(n => {
-        const cat = CATEGORIES.find(c => c.name === n.category);
+        const cat = allExpenseCategories.find(c => c.name === n.category);
         const color =
           n.st === "overdue" ? "#EF4444"
           : n.st === "due-today" ? "#F97316"
